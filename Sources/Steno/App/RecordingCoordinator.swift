@@ -99,6 +99,23 @@ final class RecordingCoordinator {
     /// Whether a start or a stop is in flight.
     private var isTransitioning: Bool { isStarting || isStopping }
 
+    /// Bundle identifier and name of the app the running recording belongs to, for
+    /// the status line and for auto-stop.
+    ///
+    /// Set for every `online` recording that could name an app, whether detection
+    /// started it or the user did: auto-stop asks "is the meeting this recording is of
+    /// over", and a manual recording of a Teams call is still a recording of a Teams
+    /// call.
+    private(set) var recordingBundleId: String?
+
+    /// Called when a recording has finished, for any reason, with the bundle
+    /// identifier it belonged to. Detection uses it to forget a meeting it offered.
+    var onRecordingEnded: ((String?) -> Void)?
+
+    /// Why the recording that is being stopped is being stopped. Set by `stop`, read
+    /// by the code that writes `meta.json`, cleared afterwards.
+    private var pendingStopReason: MeetingStopReason = .manual
+
     private var session: RecordingSession?
     /// The recorder of the running recording. Opened per recording, because holding a
     /// microphone between meetings is both wasteful and visible in the menu bar.
@@ -147,6 +164,15 @@ final class RecordingCoordinator {
     /// `--tap-target <bundle id>`, and nothing else, sets this.
     var forcedTapTargetBundleId: String?
 
+    /// Skips the permission gate for a debug run.
+    ///
+    /// The simulations fake the permission snapshot, but the permission monitor keeps
+    /// refreshing in the background and overwrites it a second later — which is fine
+    /// for a run that starts immediately and fatal for one that waits five seconds for
+    /// a debounce and a popup. This says "the gate is not what is being tested here",
+    /// once, in one place, in debug builds only.
+    var ignoresPermissionGate = false
+
     /// Shortens the two deadlines, so the timeout paths can be tested in under a
     /// second rather than in half a minute. Tests only.
     func setRecorderTimeouts(start: Duration, stop: Duration) {
@@ -173,7 +199,11 @@ final class RecordingCoordinator {
         if appState.phase.isProcessing { return .processing }
 
         let requirement: MeetingModeRequirement = mode == .online ? .online : .onsite
-        if let missing = appState.permissions.firstMissing(for: requirement) {
+        var checksPermissions = true
+        #if DEBUG
+        checksPermissions = !ignoresPermissionGate
+        #endif
+        if checksPermissions, let missing = appState.permissions.firstMissing(for: requirement) {
             return .missingPermission(missing)
         }
 
@@ -212,7 +242,8 @@ final class RecordingCoordinator {
         mode: MeetingMode,
         trigger: MeetingTrigger,
         appName: String? = nil,
-        title: String? = nil
+        title: String? = nil,
+        tapTarget: TapTarget? = nil
     ) {
         if let blocker = canStart(mode: mode) {
             // A trigger arriving during a recording is ignored in silence, per
@@ -266,6 +297,7 @@ final class RecordingCoordinator {
                 trigger: trigger,
                 appName: appName,
                 title: title,
+                tapTarget: tapTarget,
                 expectedSpeakers: speakers,
                 microphoneHint: hint
             )
@@ -277,6 +309,7 @@ final class RecordingCoordinator {
         trigger: MeetingTrigger,
         appName: String?,
         title: String?,
+        tapTarget requestedTapTarget: TapTarget?,
         expectedSpeakers: Int?,
         microphoneHint: String?
     ) async {
@@ -297,7 +330,9 @@ final class RecordingCoordinator {
         var resolvedAppName = appName
         var resolvedTrigger = trigger
         if mode == .online {
-            tapTarget = resolveOnlineTapTarget()
+            // Detection (M3) has already worked out which processes belong to the
+            // meeting and passes them in; a manual start asks the HAL here.
+            tapTarget = requestedTapTarget ?? resolveOnlineTapTarget()
             if let name = tapTarget.appName {
                 // Detection (M3) names the app itself and wins; a manual start takes
                 // the name from whichever app turned out to be tapped.
@@ -383,6 +418,7 @@ final class RecordingCoordinator {
             Log.audio.error("recorder refused to start: \(error.localizedDescription, privacy: .public)")
             newSession.fail(reason: error.localizedDescription)
             appState.notice = error.localizedDescription
+            notifyFailure(reason: error.localizedDescription, folder: newSession.folder)
             return
         case .timedOut(let task):
             let reason = RecorderTimeout.start.localizedDescription
@@ -395,6 +431,9 @@ final class RecordingCoordinator {
 
         session = newSession
         recorder = newRecorder
+        recordingBundleId = resolvedTrigger.bundleId ?? tapTarget.bundleId
+        pendingStopReason = .manual
+        appState.recordingAppName = mode == .online ? resolvedAppName : nil
         appState.phase = .recording(mode: mode, started: started)
         // Nothing needs saying about a recording that started — except the
         // microphone-mode hint, which stays up for as long as it runs.
@@ -460,11 +499,15 @@ final class RecordingCoordinator {
     /// In M0 there is nothing between those two states — no transcription exists yet —
     /// but `meta.json` is written at each step anyway, because that sequence is the
     /// contract a downstream tool and the crash recovery in M6 both read.
-    func stop() {
+    /// - Parameter reason: what ended the recording. Written to `meta.json` as
+    ///   `stopReason`, which is the only thing that tells a folder stopped by the user
+    ///   apart from one auto-stopped by detection or cut short by the Mac sleeping.
+    func stop(reason: MeetingStopReason = .manual) {
         // A stop pressed while the microphone is still being opened is not a mistake
         // and is not dropped: it is honoured the moment the recording exists.
         if isStarting {
             pendingStop = true
+            pendingStopReason = reason
             Log.app.notice("stop requested while the recording was still starting")
             return
         }
@@ -472,6 +515,7 @@ final class RecordingCoordinator {
             Log.app.debug("stop ignored: nothing is recording")
             return
         }
+        pendingStopReason = reason
         isStopping = true
         Task { [weak self] in
             guard let self else { return }
@@ -486,7 +530,7 @@ final class RecordingCoordinator {
         pendingStop = false
         // If the start failed, there is nothing to stop and this is a no-op.
         Log.app.notice("honouring the stop that arrived during the start")
-        stop()
+        stop(reason: pendingStopReason)
     }
 
     private func finishRecording() async {
@@ -523,9 +567,10 @@ final class RecordingCoordinator {
 
         appState.phase = .processing(progress: nil, label: String(localized: "Verarbeitung"))
 
+        let reason = pendingStopReason
         do {
             try session.update { meta in
-                meta.finishCapture(at: ended)
+                meta.finishCapture(at: ended, reason: reason)
                 if let outcome {
                     meta.channels = outcome.channels
                     meta.audio = outcome.audioFileName
@@ -546,9 +591,24 @@ final class RecordingCoordinator {
         Log.app.notice(
             """
             recording finished: \(session.folder.lastPathComponent, privacy: .public) \
-            after \(Int(ended.timeIntervalSince(session.meta.started)), privacy: .public) s
+            after \(Int(ended.timeIntervalSince(session.meta.started)), privacy: .public) s, \
+            stopped by \(reason.rawValue, privacy: .public)
             """
         )
+        recordingDidEnd()
+    }
+
+    /// Clears what belonged to the recording that just ended and tells detection.
+    ///
+    /// Detection has to hear about every ending, not only its own auto-stop: a user
+    /// who stops a recording by hand in the middle of a call must not be offered the
+    /// same call again ten seconds later.
+    private func recordingDidEnd() {
+        let bundleId = recordingBundleId
+        recordingBundleId = nil
+        pendingStopReason = .manual
+        appState.recordingAppName = nil
+        onRecordingEnded?(bundleId)
     }
 
     /// Finishes a folder whose recorder never answered the stop.
@@ -563,8 +623,9 @@ final class RecordingCoordinator {
         let audio = session.folder.appendingPathComponent(WAVWriter.fileName)
         let hasAudio = FileManager.default.fileExists(atPath: audio.stenoPath)
         let mode = session.meta.mode
+        let stopReason = pendingStopReason
         try? session.update { meta in
-            meta.finishCapture(at: ended)
+            meta.finishCapture(at: ended, reason: stopReason)
             meta.channels = mode.channels
             meta.audio = hasAudio ? WAVWriter.fileName : nil
         }
@@ -573,6 +634,41 @@ final class RecordingCoordinator {
         appState.lastMeetingURL = session.folder
         appState.notice = reason
         appState.phase = .idle
+        notifyFailure(reason: reason, folder: session.folder)
+        recordingDidEnd()
+    }
+
+    // MARK: - Quitting
+
+    /// Releases the audio hardware before the process exits.
+    ///
+    /// Quitting with a process tap still open leaves it behind in `coreaudiod`, and a
+    /// leaked tap is not a tidiness problem: the daemon gets into a state where the
+    /// *next* `AudioDeviceStart` blocks for ever, and every recording after it fails
+    /// with "the audio system is not answering" until the Mac is restarted. So the
+    /// recorder is given a few seconds to hand the hardware back, on the way out.
+    ///
+    /// Blocking the main thread is deliberate and is the only thing that works here:
+    /// `applicationWillTerminate` is the last moment there is, and an `await` would
+    /// return to a run loop that is never going to run again. The recorder is an actor
+    /// of its own, so its work proceeds on another thread while this one waits.
+    ///
+    /// `meta.json` is left saying `recording`. That is not an oversight: the folder is
+    /// exactly what a crash would have left, and M6's recovery pass is what finishes
+    /// it — claiming a clean ending for a recording that was cut off mid-sentence
+    /// would be worse than saying plainly that it was.
+    func prepareForTermination() {
+        guard let stopping = recorder else { return }
+        recorder = nil
+        Log.audio.notice("quitting while recording; releasing the audio hardware")
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            _ = try? await stopping.stop()
+            semaphore.signal()
+        }
+        if semaphore.wait(timeout: .now() + 5) == .timedOut {
+            Log.audio.error("the recorder did not release the hardware before the app quit")
+        }
     }
 
     // MARK: - Interruptions
@@ -625,7 +721,7 @@ final class RecordingCoordinator {
         outcome: AudioRecorderOutcome?
     ) {
         try? session.update { meta in
-            meta.finishCapture(at: ended)
+            meta.finishCapture(at: ended, reason: reason.stopReason)
             if let outcome {
                 meta.channels = outcome.channels
                 meta.audio = outcome.audioFileName
@@ -636,6 +732,29 @@ final class RecordingCoordinator {
         appState.lastMeetingURL = session.folder
         appState.notice = reason.localizedReason
         appState.phase = .idle
+        notifyFailure(reason: reason.localizedReason, folder: session.folder)
+        recordingDidEnd()
+    }
+
+    // MARK: - Notifications
+
+    /// Tells the user that a recording ended badly.
+    ///
+    /// The plan's addition to specification §5, and the half of it that exists now:
+    /// a failure is worth a banner because the recording is gone and the meeting is
+    /// still running, so the user can start it again. The `done` notification arrives
+    /// with transcription in M5. Silent unless the user has both switched
+    /// notifications on and granted them.
+    private func notifyFailure(reason: String, folder: URL?) {
+        let isEnabled = settings.settings.notificationsEnabled
+        Task {
+            await Notifications.shared.post(
+                title: String(localized: "Aufnahme fehlgeschlagen"),
+                body: reason,
+                folder: folder,
+                isEnabled: isEnabled
+            )
+        }
     }
 
     // MARK: - Disk space

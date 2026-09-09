@@ -13,6 +13,65 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **Meeting detection (M3).** `MeetingDetector` watches Core Audio's process list and
+  the `IsRunningInput` property of every audio process — event-driven through
+  `AudioObjectAddPropertyListenerBlock`, with a two-second poll as the fallback when
+  the HAL refuses a listener, and a one-second tick that advances the clock a listener
+  cannot. A watched app reading the microphone for **≥ 5 s** is a meeting
+  (specification §2).
+- **Helper processes count as their app.** A watchlist entry now matches its own
+  bundle identifier and anything below it in the dotted namespace, because Chrome,
+  Edge, and Teams capture and play meetings in helpers
+  (`com.google.Chrome.helper`). All of an entry's processes are tapped together —
+  `TapTarget.process` carries a list of PIDs and `CATapDescription` mixes them down —
+  so ch0 no longer depends on guessing which helper the meeting is in. A target whose
+  processes have gone away falls back to a system-wide tap instead of failing.
+- **The state machine is pure and tested** (`StenoCore.MeetingDetectorLogic`): the
+  five-second debounce, the thirty-second auto-stop silence, and the sixty-second
+  "ask once per meeting" hysteresis are a function of an activity set and a
+  monotonic clock, driven in tests by a number rather than by waiting.
+- **Meeting titles.** `WindowTitleReader` reads the triggering app's window titles
+  (`CGWindowListCopyWindowInfo`, layer 0, largest window first) and
+  `StenoCore.MeetingTitleCleaner` strips the app's decoration —
+  `Weekly Sync | Microsoft Teams` becomes `Weekly Sync`. Titles that name the app
+  rather than the meeting (`Zoom Meeting`, `Meet`, a Google Meet room code) are
+  rejected, and the search is repeated every 2 s for up to 10 s because Teams renames
+  its window only once the call is joined. Silent without Screen Recording.
+- **Calendar titles, opt-in** (`CalendarTitleReader`). Used only when the setting is
+  on *and* EventKit reports full access, for the Zoom and Google Meet case where no
+  window carries a name. Access is requested in exactly one place: the Settings
+  toggle.
+- **Rules** (`RuleEngine`). The app and every title found, cleaned and raw, are matched
+  against the user's rules: `never` records nothing and shows nothing, `always`
+  records at once with `trigger: {"kind":"auto",…}`, `ask` — and no match — shows the
+  suggestion.
+- **The suggestion panel** (`SuggestionPanel`): a borderless, non-activating `NSPanel`
+  in the top-right corner of the menu-bar screen, above the status bar, on every Space
+  and over full-screen apps. Return records, Escape ignores, and twenty seconds
+  without an answer is an ignore. It never activates Steno, so the meeting keeps the
+  keyboard.
+- **Auto-stop.** No process of the recorded app reading the microphone for the
+  auto-stop delay (30 s by default) ends an `online` recording. `onsite` never
+  auto-stops (specification §1).
+- **Sleep and lock handling** (`SleepLockObserver`). `NSWorkspace.willSleepNotification`
+  stops a running recording before the machine suspends;
+  `com.apple.screenIsLocked` / `screenIsUnlocked` set `AppState.isScreenLocked`, which
+  M4's screenshots will read. Quitting with a recording running now releases the
+  process tap first — a leaked tap wedges `coreaudiod` for every recording after it.
+- **`meta.stopReason`**: `manual` · `auto` · `sleep` · `deviceLost`, so a folder says
+  what ended it. Documented in `docs/FORMAT.md`, along with `title` and the `auto`
+  trigger.
+- **Notifications** (`System/Notifications.swift`). A `UNUserNotificationCenter`
+  wrapper with an "Im Finder zeigen" action; used for failed recordings now and for
+  finished transcripts in M5. Authorization is requested only from the onboarding
+  window's finish button and the Settings toggle, never at launch, and nothing is
+  posted unless the status is already `authorized` or `provisional`.
+- **The menu status line names the recorded app**: "Aufnahme läuft · Teams · 12:34".
+- **Debug launch arguments** `--simulate-detection <bundle id> [title]`,
+  `--simulate-detection-end <s>`, `--auto-answer record|ignore`, `--auto-stop <s>`,
+  `--suggestion-timeout <s>`, `--rule never|ask|always <pattern>`, and
+  `--null-recorder`, which drive the whole of §2 against an invented process list.
+
 - **`online` audio (M2).** `ProcessTapRecorder` records a meeting as two channels in
   one `audio.wav` — 48 kHz, 16-bit PCM, ch0 the tapped system audio downmixed to
   mono, ch1 the microphone. A `CATapDescription` process tap and the default input

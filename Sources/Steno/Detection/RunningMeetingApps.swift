@@ -34,10 +34,18 @@ struct AudioProcessDescriptor: Sendable, Equatable {
 /// is worth a great deal more than a system-wide tap that also records the music the
 /// user forgot was playing.
 enum RunningMeetingApps {
-    /// A watchlist app that is reading the microphone.
+    /// A watchlist app that is reading the microphone, with every process of it that is.
     struct Match: Sendable, Equatable {
-        var process: AudioProcessDescriptor
+        /// Every process belonging to `app` that is reading input, in the order the
+        /// HAL listed them. Never empty.
+        var processes: [AudioProcessDescriptor]
         var app: WatchedApp
+
+        /// The first of them. Kept because most callers want one PID and because the
+        /// HAL lists the parent before its helpers.
+        var process: AudioProcessDescriptor { processes[0] }
+
+        var pids: [pid_t] { processes.map(\.pid) }
     }
 
     // MARK: - The filter (pure)
@@ -54,9 +62,26 @@ enum RunningMeetingApps {
         watchlist: [WatchedApp]
     ) -> [Match] {
         watchlist.compactMap { app in
-            processes
-                .first { $0.isRunningInput && $0.bundleId == app.bundleId }
-                .map { Match(process: $0, app: app) }
+            let owned = processes.filter { process in
+                guard process.isRunningInput, let bundleId = process.bundleId else { return false }
+                return app.matches(processBundleId: bundleId)
+            }
+            return owned.isEmpty ? nil : Match(processes: owned, app: app)
+        }
+    }
+
+    /// Every process belonging to a watchlist app, whether or not it is reading input.
+    ///
+    /// This is what a tap target is built from: the app is in a meeting because *one*
+    /// of its processes reads the microphone, but the meeting is played back through
+    /// whichever process it likes, so the tap has to cover all of them.
+    static func processes(
+        of app: WatchedApp,
+        in processes: [AudioProcessDescriptor]
+    ) -> [AudioProcessDescriptor] {
+        processes.filter { process in
+            guard let bundleId = process.bundleId else { return false }
+            return app.matches(processBundleId: bundleId)
         }
     }
 
@@ -81,7 +106,21 @@ enum RunningMeetingApps {
         watchlist: [WatchedApp]
     ) -> TapTarget {
         guard let match = soleMatch(in: processes, watchlist: watchlist) else { return .systemWide }
-        return .process(pid: match.process.pid, bundleId: match.app.bundleId, name: match.app.name)
+        return target(for: match.app, in: processes)
+    }
+
+    /// The tap target for one watchlist app: every process it owns.
+    ///
+    /// Falls back to a system-wide tap when the app has no audio process left at all —
+    /// which happens when the meeting ended between the trigger and the start, and
+    /// when a detection was injected for an app that is not running.
+    static func target(
+        for app: WatchedApp,
+        in processes: [AudioProcessDescriptor]
+    ) -> TapTarget {
+        let owned = self.processes(of: app, in: processes)
+        guard !owned.isEmpty else { return .systemWide }
+        return .process(pids: owned.map(\.pid), bundleId: app.bundleId, name: app.name)
     }
 
     /// The tap target for one named bundle identifier, whether or not it is on the
@@ -94,10 +133,14 @@ enum RunningMeetingApps {
         in processes: [AudioProcessDescriptor],
         watchlist: [WatchedApp]
     ) -> TapTarget? {
-        guard let process = processes.first(where: { $0.bundleId == bundleId }) else { return nil }
+        let owned = processes.filter {
+            guard let candidate = $0.bundleId else { return false }
+            return WatchedApp.matches(watchedBundleId: bundleId, processBundleId: candidate)
+        }
+        guard !owned.isEmpty else { return nil }
         let name = watchlist.first { $0.bundleId == bundleId }?.name
             ?? String(bundleId.split(separator: ".").last ?? "App")
-        return .process(pid: process.pid, bundleId: bundleId, name: name)
+        return .process(pids: owned.map(\.pid), bundleId: bundleId, name: name)
     }
 
     // MARK: - Asking Core Audio

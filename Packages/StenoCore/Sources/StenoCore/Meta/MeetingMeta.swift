@@ -59,6 +59,26 @@ public struct MeetingTrigger: Codable, Sendable, Hashable {
     }
 }
 
+/// Why capture ended.
+///
+/// A recording that stopped because the meeting ended, one the user stopped, and one
+/// the Mac cut short by going to sleep all leave the same files behind, and only this
+/// field tells them apart afterwards. It says nothing about success: a recording can
+/// end for any of these reasons and still be `done`, and `stopReason` is written even
+/// when `state` ends up `failed`, where `error` says what went wrong and this says
+/// what ended it.
+public enum MeetingStopReason: String, Codable, Sendable, Hashable, CaseIterable {
+    /// The user pressed stop, in the menu or with ⌥⌘S.
+    case manual
+    /// Detection saw no watched process reading the microphone for long enough.
+    /// Specification §2's auto-stop. `online` only.
+    case auto
+    /// The Mac went to sleep. The recording was closed before the machine suspended.
+    case sleep
+    /// The input device disappeared, or capture was ended by the system.
+    case deviceLost
+}
+
 /// The audio input the recording used, and the microphone mode it was in.
 ///
 /// `microphoneMode` matters for `onsite`: macOS Voice Isolation suppresses every
@@ -165,6 +185,9 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
     /// What the user said about the number of people in the room, if asked.
     /// Absent whenever nothing was said, which is the default.
     public var speakers: SpeakerHint?
+    /// What ended the capture. Absent while `state` is `recording`, and absent for a
+    /// recording that was interrupted before anything could be said about it.
+    public var stopReason: MeetingStopReason?
 
     public init(
         mode: MeetingMode,
@@ -184,7 +207,8 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
         os: String? = nil,
         models: ModelIdentifiers? = nil,
         error: String? = nil,
-        speakers: SpeakerHint? = nil
+        speakers: SpeakerHint? = nil,
+        stopReason: MeetingStopReason? = nil
     ) {
         self.mode = mode
         self.started = started
@@ -206,6 +230,7 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
         // An empty hint is the same as no hint, and writing `"speakers":{}` into every
         // `meta.json` would put a key in the format that says nothing.
         self.speakers = speakers.flatMap { $0.isEmpty ? nil : $0 }
+        self.stopReason = stopReason
     }
 
     // MARK: - State
@@ -222,10 +247,16 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
         error = reason
     }
 
-    /// Sets `ended` and derives `duration` from it.
-    public mutating func finishCapture(at end: Date) {
+    /// Sets `ended` and derives `duration` from it, and records what ended it.
+    ///
+    /// The reason is optional so that a caller with nothing to say does not have to
+    /// invent one; passing `nil` leaves whatever was already there, so a stop reason
+    /// recorded by the path that noticed first is not overwritten by a later,
+    /// less-informed writer.
+    public mutating func finishCapture(at end: Date, reason: MeetingStopReason? = nil) {
         ended = end
         duration = end.timeIntervalSince(started)
+        if let reason { stopReason = reason }
     }
 
     /// Records the speaker count the user gave, or clears the hint.

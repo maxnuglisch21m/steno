@@ -56,13 +56,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         MainActor.assumeIsolated {
             let environment = AppEnvironment.shared
+            #if DEBUG
+            let debugArguments = DebugLaunchArguments(CommandLine.arguments)
+            // A debug run drives detection itself, or wants it off: a real meeting
+            // starting on this Mac must not interrupt what is being measured.
+            environment.start(detection: debugArguments.wantsAppDetection)
+            #else
             environment.start()
+            #endif
             Log.app.notice(
                 "Steno \(AppVersion.marketing, privacy: .public) (\(AppVersion.build, privacy: .public)) launched"
             )
 
             #if DEBUG
-            let debugArguments = DebugLaunchArguments(CommandLine.arguments)
             if debugArguments.isActive {
                 debugArguments.run(in: environment)
                 return

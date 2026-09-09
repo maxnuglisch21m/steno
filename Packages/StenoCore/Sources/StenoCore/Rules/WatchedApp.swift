@@ -29,6 +29,41 @@ public struct WatchedApp: Codable, Sendable, Hashable, Identifiable {
         WatchedApp(bundleId: "app.zen-browser.zen", name: "Zen")
     ]
 
+    // MARK: - Matching a process against this entry
+
+    /// Whether a process with this bundle identifier belongs to this watched app.
+    ///
+    /// Equality is not enough. Chrome, Edge, and Teams do not play or capture audio in
+    /// the process the user launched: they hand it to a helper, and the helper carries
+    /// a bundle identifier one segment longer — `com.google.Chrome.helper`,
+    /// `com.microsoft.teams2.helper.renderer`. A watchlist entry therefore matches its
+    /// own identifier and anything below it in the dotted namespace, and nothing else:
+    /// the trailing dot is what keeps `com.google.ChromeCanary` out.
+    ///
+    /// Case-insensitive, because Core Audio reports the identifier as the bundle
+    /// spells it and a watchlist typed by hand rarely agrees on capitalisation.
+    public func matches(processBundleId: String) -> Bool {
+        Self.matches(watchedBundleId: bundleId, processBundleId: processBundleId)
+    }
+
+    /// The same test, without an instance, so a bare identifier can be checked.
+    public static func matches(watchedBundleId: String, processBundleId: String) -> Bool {
+        guard !watchedBundleId.isEmpty else { return false }
+        if processBundleId.caseInsensitiveCompare(watchedBundleId) == .orderedSame { return true }
+        let prefix = watchedBundleId + "."
+        return processBundleId.count > prefix.count
+            && processBundleId.prefix(prefix.count).caseInsensitiveCompare(prefix) == .orderedSame
+    }
+
+    /// The watchlist entry a process belongs to, in watchlist order.
+    ///
+    /// First match wins, so a more specific entry placed above a general one takes the
+    /// process — which is the only way to watch one Chrome profile's helper without
+    /// watching all of Chrome.
+    public static func entry(for processBundleId: String, in watchlist: [WatchedApp]) -> WatchedApp? {
+        watchlist.first { $0.matches(processBundleId: processBundleId) }
+    }
+
     // MARK: - Bundle identifiers
 
     /// Whether a string is shaped like a bundle identifier, so that Settings can

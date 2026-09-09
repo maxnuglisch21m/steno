@@ -55,6 +55,18 @@ final class AppState {
     /// The newest finished meeting, for "Letztes Meeting im Finder zeigen".
     var lastMeetingURL: URL?
 
+    /// Display name of the app being recorded, for the status line: "Aufnahme läuft ·
+    /// Teams · 12:34". `nil` for `onsite` and for an `online` recording with a
+    /// system-wide tap, where the mode's own name is all there is to say.
+    var recordingAppName: String?
+
+    /// Whether the screen is locked right now.
+    ///
+    /// Set by `SleepLockObserver`. Audio does not care — a locked Mac keeps recording
+    /// the meeting, which is correct — but M4's screenshots do: two hundred images of
+    /// the lock wallpaper are two hundred images of nothing.
+    var isScreenLocked = false
+
     /// Seconds since the recording began, updated once a second.
     private(set) var elapsed: TimeInterval = 0
 
@@ -91,9 +103,11 @@ final class AppState {
     /// "Aufnahme läuft · Vor Ort · 12:34".
     var recordingStatusLine: String? {
         guard case .recording(let mode, _) = phase else { return nil }
+        // The app's name displaces the mode when one is known: while a Teams call is
+        // being recorded, "Teams" says everything "Online" said and one thing more.
         return String(
             format: String(localized: "Aufnahme läuft · %@ · %@"),
-            Self.modeName(mode),
+            recordingAppName ?? Self.modeName(mode),
             elapsedClock
         )
     }

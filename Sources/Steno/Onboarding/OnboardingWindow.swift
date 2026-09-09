@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 /// The window shown on first launch, and again from Settings → Allgemein.
 ///
@@ -116,7 +117,20 @@ struct OnboardingView: View {
                     .foregroundStyle(.tertiary)
                 Spacer()
                 Button(String(localized: "Fertig")) {
-                    NSApp.keyWindow?.close()
+                    // The one moment in the whole app where notification permission is
+                    // asked for without the user having flipped the settings toggle:
+                    // they have just finished setting Steno up, they have said yes to
+                    // three system prompts already, and a transcript that finishes
+                    // twenty minutes later has no other way of reaching them. Asked
+                    // only when notifications are switched on and macOS has never been
+                    // asked before — never at launch, never twice.
+                    Task {
+                        if environment.settings.settings.notificationsEnabled,
+                           await Notifications.shared.authorizationStatus() == .notDetermined {
+                            await Notifications.shared.requestAuthorization()
+                        }
+                        await MainActor.run { NSApp.keyWindow?.close() }
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
             }

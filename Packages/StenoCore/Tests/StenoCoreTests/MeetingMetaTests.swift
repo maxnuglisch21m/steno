@@ -291,4 +291,67 @@ struct MeetingMetaTests {
         #expect(display.height == 1440)
         #expect(DisplayInfo(index: 0, id: 1, px: []).width == nil)
     }
+
+    // MARK: - stopReason
+
+    @Test("the stop reason survives a JSON round trip")
+    func stopReasonRoundTrip() throws {
+        for reason in MeetingStopReason.allCases {
+            var meta = MeetingMeta(
+                mode: .online,
+                started: Self.started,
+                trigger: .auto(bundleId: "com.microsoft.teams2", name: "Teams"),
+                input: AudioInputInfo(device: "MacBook Pro Mikrofon"),
+                app: "0.1.0",
+                title: "Weekly Sync"
+            )
+            meta.finishCapture(at: Self.ended, reason: reason)
+            let decoded = try MeetingMeta.decode(from: try meta.jsonData())
+            #expect(decoded.stopReason == reason)
+            #expect(decoded.title == "Weekly Sync")
+            #expect(decoded.trigger == MeetingTrigger.auto(bundleId: "com.microsoft.teams2", name: "Teams"))
+        }
+    }
+
+    @Test("the stop reason is written with the spelling the format documents")
+    func stopReasonSpelling() throws {
+        var meta = MeetingMeta(
+            mode: .online,
+            started: Self.started,
+            trigger: .manual,
+            input: AudioInputInfo(device: "MacBook Pro Mikrofon"),
+            app: "0.1.0"
+        )
+        meta.finishCapture(at: Self.ended, reason: .deviceLost)
+        let json = String(decoding: try meta.jsonData(), as: UTF8.self)
+        #expect(json.contains("\"stopReason\" : \"deviceLost\""))
+    }
+
+    @Test("a recording that never stopped carries no stop reason")
+    func noStopReasonWhileRecording() throws {
+        let meta = MeetingMeta(
+            mode: .online,
+            started: Self.started,
+            trigger: .manual,
+            input: AudioInputInfo(device: "MacBook Pro Mikrofon"),
+            app: "0.1.0"
+        )
+        #expect(meta.stopReason == nil)
+        let json = String(decoding: try meta.jsonData(), as: UTF8.self)
+        #expect(!json.contains("stopReason"))
+    }
+
+    @Test("finishing without a reason keeps the one already recorded")
+    func finishKeepsExistingReason() {
+        var meta = MeetingMeta(
+            mode: .online,
+            started: Self.started,
+            trigger: .manual,
+            input: AudioInputInfo(device: "MacBook Pro Mikrofon"),
+            app: "0.1.0"
+        )
+        meta.finishCapture(at: Self.ended, reason: .sleep)
+        meta.finishCapture(at: Self.ended)
+        #expect(meta.stopReason == .sleep)
+    }
 }

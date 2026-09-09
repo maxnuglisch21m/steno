@@ -13,6 +13,18 @@
         }
       }
     },
+    "%@-Meeting läuft. Aufnehmen?": {
+      "comment": "Suggestion panel headline when the meeting has no known title. %@ is the app name, e.g. Teams.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A %@ meeting is running. Record it?"
+          }
+        }
+      }
+    },
     "%d px": {
       "comment": "Pixel value next to the maximum image edge stepper.",
       "extractionState": "manual",
@@ -157,6 +169,18 @@
         }
       }
     },
+    "Aufnahme fehlgeschlagen": {
+      "comment": "Notification title when a recording ended badly.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording failed"
+          }
+        }
+      }
+    },
     "Aufnahme läuft · %@ · %@": {
       "comment": "Non-interactive status line at the top of the menu: mode, then mm:ss.",
       "extractionState": "manual",
@@ -201,6 +225,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Stop recording"
+          }
+        }
+      }
+    },
+    "Aufnehmen": {
+      "comment": "Suggestion panel: the button that starts the recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record"
           }
         }
       }
@@ -261,6 +297,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Automatic"
+          }
+        }
+      }
+    },
+    "Automatisch gestoppt: %@ nutzt das Mikrofon nicht mehr.": {
+      "comment": "Menu notice after auto-stop. %@ is the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped automatically: %@ is no longer using the microphone."
           }
         }
       }
@@ -453,6 +501,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "The recording folder “%@” could not be created: %@"
+          }
+        }
+      }
+    },
+    "Der Mac ist eingeschlafen. Die Aufnahme wurde beendet.": {
+      "comment": "Menu notice when sleep ended a recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Mac went to sleep. The recording was stopped."
           }
         }
       }
@@ -685,6 +745,18 @@
         }
       }
     },
+    "Ignorieren": {
+      "comment": "Suggestion panel: the button that dismisses it without recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignore"
+          }
+        }
+      }
+    },
     "Im Finder zeigen": {
       "comment": "Button that opens the recording folder.",
       "extractionState": "manual",
@@ -873,6 +945,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Notify me when a transcript is finished"
+          }
+        }
+      }
+    },
+    "Mitteilungen sind in den Systemeinstellungen abgelehnt.": {
+      "comment": "Shown next to the notification toggle when authorization was refused.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications are denied in System Settings."
           }
         }
       }
@@ -1101,6 +1185,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "When one of these apps reads the microphone, Steno offers to record. Detection is Core Audio only — no calendar, no window scraping."
+          }
+        }
+      }
+    },
+    "Ohne Kalenderzugriff bleibt der Termintitel ungenutzt. In den Systemeinstellungen unter „Datenschutz & Sicherheit → Kalender“ wieder erlauben.": {
+      "comment": "Shown when calendar access was refused.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Without calendar access the event title stays unused. Allow it again in System Settings under Privacy & Security → Calendars."
           }
         }
       }
@@ -1525,6 +1621,18 @@
         }
       }
     },
+    "Teilnehmer informieren.": {
+      "comment": "Suggestion panel: the reminder under the buttons. Recording a meeting without saying so is illegal in most of Europe.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tell the other participants."
+          }
+        }
+      }
+    },
     "Titel des laufenden Kalendertermins lesen": {
       "comment": "Settings toggle.",
       "extractionState": "manual",
@@ -1869,6 +1977,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open"
+          }
+        }
+      }
+    },
+    "„%1$@“ läuft in %2$@. Aufnehmen?": {
+      "comment": "Suggestion panel headline with a known title. %1$@ is the meeting title, %2$@ the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” is running in %2$@. Record it?"
           }
         }
       }

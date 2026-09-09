@@ -23,6 +23,14 @@ final class AppEnvironment {
     let inputDevices: AudioInputDeviceList
     let coordinator: RecordingCoordinator
     let hotKeys: HotKeys
+    /// Specification §2: who is reading the microphone, and what follows from it.
+    let detector: MeetingDetector
+    /// The trigger-to-recording path — rules, the popup, auto-stop, sleep.
+    let detectionController: MeetingDetectionController
+    /// never / ask / always, from the rules and the meeting's title.
+    let ruleEngine: RuleEngine
+    /// Sleep and the lock screen.
+    private(set) var sleepLock: SleepLockObserver?
 
     /// Where the coordinator gets a recorder from. The default gives `onsite`
     /// `MicRecorder` (§3b) and `online` `ProcessTapRecorder` (§3a); the tests and
@@ -43,19 +51,46 @@ final class AppEnvironment {
         let models = self.models
         self.permissions = PermissionMonitor(modelsInstalled: { models.isInstalled })
 
-        self.coordinator = RecordingCoordinator(
+        let coordinator = RecordingCoordinator(
             appState: appState,
             settings: settings,
             store: store,
             recorderFactory: self.recorderFactory
         )
+        self.coordinator = coordinator
         self.hotKeys = HotKeys()
+
+        let detector = MeetingDetector(settings: settings)
+        self.detector = detector
+        // The title source asks the detector for a fresh process list between
+        // attempts: a browser opens a new helper for the call after the trigger has
+        // already fired, and the window with the meeting's name in it belongs to that
+        // one.
+        let titleSource = SystemMeetingTitleSource(
+            settings: settings,
+            refreshPIDs: { [weak detector] meeting in
+                detector?.currentProcesses(of: meeting.app) ?? meeting.pids
+            }
+        )
+        let ruleEngine = RuleEngine(settings: settings, titleSource: titleSource)
+        self.ruleEngine = ruleEngine
+        self.detectionController = MeetingDetectionController(
+            settings: settings,
+            appState: appState,
+            coordinator: coordinator,
+            detector: detector,
+            ruleEngine: ruleEngine
+        )
     }
 
     // MARK: - Launch
 
     /// Everything that has to happen once, at launch.
-    func start() {
+    ///
+    /// - Parameter detection: whether specification §2's detection is switched on. The
+    ///   only caller that says `false` is a debug run that drives detection itself, so
+    ///   that a simulation is not interrupted by a real meeting starting on this Mac.
+    func start(detection: Bool = true) {
         settings.syncLaunchAtLogin()
         models.asrVersion = settings.settings.asrVersion
 
@@ -69,6 +104,24 @@ final class AppEnvironment {
             self?.handle(action)
         }
 
+        // The delegate and the "Im Finder zeigen" action, neither of which prompts.
+        // Authorization is asked for in the onboarding window and the settings toggle,
+        // and nowhere else.
+        Notifications.shared.prepare()
+
+        let sleepLock = SleepLockObserver(
+            onWillSleep: { [weak self] in
+                self?.detectionController.handleWillSleep()
+            },
+            onLockChange: { [weak self] isLocked in
+                self?.appState.isScreenLocked = isLocked
+            }
+        )
+        sleepLock.start()
+        self.sleepLock = sleepLock
+
+        if detection { detectionController.start() }
+
         Task { [weak self] in
             guard let self else { return }
             await self.permissions.refresh()
@@ -79,6 +132,12 @@ final class AppEnvironment {
 
     /// Undone on quit, so the hotkeys and the ticker do not outlive the app.
     func stop() {
+        // First, because a process tap left open in `coreaudiod` wedges the next
+        // recording — and every one after it.
+        coordinator.prepareForTermination()
+        detectionController.stop()
+        sleepLock?.stop()
+        sleepLock = nil
         hotKeys.unregister()
         permissions.stopPeriodicRefresh()
         appState.stopTicker()

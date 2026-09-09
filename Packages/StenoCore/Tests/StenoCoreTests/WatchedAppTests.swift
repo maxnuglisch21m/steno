@@ -85,4 +85,48 @@ struct WatchedAppTests {
         let decoded = try JSONDecoder().decode([WatchedApp].self, from: data)
         #expect(decoded == WatchedApp.defaults)
     }
+
+    // MARK: - Matching a process against a watch entry
+
+    @Test(
+        "a watch entry matches its own identifier and its helper processes",
+        arguments: [
+            ("com.google.Chrome", "com.google.Chrome", true),
+            ("com.google.Chrome", "com.google.Chrome.helper", true),
+            ("com.google.Chrome", "com.google.Chrome.helper.Renderer", true),
+            ("com.microsoft.teams2", "com.microsoft.teams2", true),
+            ("com.microsoft.teams2", "com.microsoft.teams2.helper.renderer", true),
+            // The trailing dot is what keeps a different app with a longer name out.
+            ("com.google.Chrome", "com.google.ChromeCanary", false),
+            ("com.google.Chrome", "com.google.Chrome2", false),
+            ("com.google.Chrome", "com.google", false),
+            ("com.google.Chrome", "com.microsoft.edge", false),
+            // Case is the bundle's business, not the watchlist's.
+            ("com.google.chrome", "com.google.Chrome.helper", true),
+            ("", "com.google.Chrome", false)
+        ]
+    )
+    func prefixMatching(watched: String, process: String, expected: Bool) {
+        #expect(WatchedApp.matches(watchedBundleId: watched, processBundleId: process) == expected)
+    }
+
+    @Test("a helper process is found in the watchlist under its parent entry")
+    func entryForHelperProcess() throws {
+        let entry = try #require(
+            WatchedApp.entry(for: "com.google.Chrome.helper", in: WatchedApp.defaults)
+        )
+        #expect(entry.bundleId == "com.google.Chrome")
+        #expect(entry.name == "Chrome")
+        #expect(WatchedApp.entry(for: "com.apple.Music", in: WatchedApp.defaults) == nil)
+    }
+
+    @Test("the first matching watchlist entry wins")
+    func entryOrder() {
+        let watchlist = [
+            WatchedApp(bundleId: "com.google.Chrome.beta", name: "Chrome Beta"),
+            WatchedApp(bundleId: "com.google.Chrome", name: "Chrome")
+        ]
+        #expect(WatchedApp.entry(for: "com.google.Chrome.beta.helper", in: watchlist)?.name == "Chrome Beta")
+        #expect(WatchedApp.entry(for: "com.google.Chrome.helper", in: watchlist)?.name == "Chrome")
+    }
 }

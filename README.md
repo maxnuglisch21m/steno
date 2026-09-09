@@ -79,7 +79,7 @@ and choose **Open**.
 Steno has no window it insists on. The whole interface is the status item:
 
 ```
-Aufnahme läuft · Vor Ort · 12:34      (only while recording, not a command)
+Aufnahme läuft · Teams · 12:34        (only while recording, not a command)
 Online-Meeting aufnehmen        ⌥⌘R
 Vor-Ort-Meeting aufnehmen       ⌥⌘V
 Aufnahme stoppen                ⌥⌘S   (only while recording)
@@ -91,6 +91,9 @@ Nach Updates suchen …                 (from the first release onwards)
 Einstellungen …                  ⌘,
 Beenden                          ⌘Q
 ```
+
+The first line names the recorded app while an `online` recording runs, and the mode
+(`Vor Ort`) otherwise.
 
 The icon says what Steno is doing: a microphone outline when idle, a filled
 microphone with a red dot and the running `mm:ss` while recording — plus a small
@@ -193,6 +196,85 @@ refusing every start with "a recording is already running" until Steno was relau
 Instead the folder is marked `failed`, the menu goes back to idle, and the reason says
 what actually fixes it: restart the Mac, or `sudo killall coreaudiod`.
 
+## Detection, rules, and the suggestion
+
+An `online` recording usually starts itself. The signal is Core Audio and nothing
+else: since macOS 14.4 the HAL says which process is reading a microphone
+(`kAudioHardwarePropertyProcessObjectList` → `kAudioProcessPropertyIsRunningInput`),
+and that is what a meeting looks like from the outside. No calendar, no window
+inspection, no accessibility API.
+
+**Watchlist and helper processes.** A watchlist entry matches its own bundle
+identifier *and everything below it in the dotted namespace*, because Chrome, Edge,
+and Teams do not capture or play a meeting in the process the user launched — they
+hand it to a helper called `com.google.Chrome.helper` or
+`com.microsoft.teams2.helper.renderer`, and which helper it is changes between calls.
+So `com.google.Chrome` on the watchlist means Chrome and all of its helpers, they
+count as one meeting, and the process tap covers all of them at once.
+
+**The timings**, all of them from specification §2 and all of them tested against a
+clock rather than a stopwatch:
+
+| | |
+|---|---|
+| Trigger | a watched app reads the microphone for **≥ 5 s** |
+| Auto-stop | **no** process of that app has read it for **≥ 30 s** (configurable) |
+| Ask again | only after the app has been quiet for **≥ 60 s** — one question per meeting |
+
+Detection is event-driven: a listener on the process list, and one on
+`IsRunningInput` of every audio process, added and removed as processes come and go.
+A one-second tick advances the clock — a listener can say *that* something changed,
+never that five seconds have passed with nothing changing. If the HAL refuses the
+listeners, detection says so in the log and falls back to a two-second poll.
+
+**What happens when the trigger fires**
+
+1. **The meeting is given a name.** The triggering app's window titles are read
+   (`CGWindowListCopyWindowInfo`, layer 0, biggest window first) and stripped of the
+   app's decoration: `Weekly Sync | Microsoft Teams` → `Weekly Sync`. A title that is
+   only the app's name — `Zoom Meeting`, `Meet`, a room code like `abc-defg-hij` —
+   counts as no title, and the search is repeated every 2 s for up to 10 s, because
+   Teams renames its window only once the call is actually joined. If nothing usable
+   turns up and the calendar setting is on, the running calendar event's title is used
+   instead.
+2. **The rules decide.** First enabled match wins, in the order they are arranged in
+   Settings → Regeln, matched against the app and every title found (cleaned *and*
+   raw): `never` records nothing and shows nothing, `always` starts recording at once,
+   `ask` — and no match at all — shows the suggestion.
+3. **The suggestion** is a borderless panel in the top-right corner, above everything,
+   on every Space:
+
+   ```
+   „Weekly Sync“ läuft in Teams. Aufnehmen?
+   [ Aufnehmen ]  [ Ignorieren ]
+   Teilnehmer informieren.
+   ```
+
+   It does not activate Steno or take the keyboard away from the meeting, but it does
+   accept Return (record) and Escape (ignore). After **20 s** without an answer it
+   fades out, and that counts as ignoring it.
+
+**While a recording runs, new triggers are ignored** (specification §1) — but
+detection keeps watching, because the same machinery is what ends the recording:
+when no process of the recorded app has read the microphone for the auto-stop delay,
+the recording stops itself and `meta.json` records `"stopReason": "auto"`. An
+`onsite` recording never auto-stops: a room full of people is not over because
+nobody's Mac is using a microphone.
+
+**Sleep and the lock screen.** `NSWorkspace.willSleepNotification` stops a running
+recording before the machine suspends — capture is about to end whether Steno agrees
+or not, and a folder that says `"stopReason": "sleep"` is worth far more than audio
+that stops mid-sentence behind a header that was never finished. The lock screen
+(`com.apple.screenIsLocked`) does not touch audio — a locked Mac keeps recording the
+meeting — but it is remembered, so M4's screenshots do not fill a folder with two
+hundred pictures of the lock wallpaper.
+
+**Notifications.** A recording that fails posts one, with an "Im Finder zeigen"
+action; a finished transcript will, from M5. Permission for them is asked for in
+exactly two places — the onboarding window's "Fertig" button and the Settings toggle
+— and never at launch. Before posting anything, Steno reads the authorization status
+and stays quiet unless it is granted.
+
 ## Settings
 
 Six tabs. The eleven settings from the specification come first within their
@@ -285,6 +367,19 @@ open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online 
 
 # The same flow with no hardware at all: folder and meta.json, no audio.
 open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
+
+# Detection end to end, with an invented process list: trigger, rules, popup,
+# recording, auto-stop. Everything downstream of "is Teams reading the microphone"
+# is the real thing. --auto-answer clicks the panel, --auto-stop shortens the
+# 30 s silence, --simulate-detection-end ends the fake meeting after n seconds.
+open build/Build/Products/Debug/Steno.app --args \
+  --simulate-detection com.microsoft.teams2 "Weekly Sync" \
+  --auto-answer record --auto-stop 5 --simulate-detection-end 8
+
+# The same with a rule, and with no hardware at all.
+open build/Build/Products/Debug/Steno.app --args \
+  --simulate-detection com.microsoft.teams2 "Weekly Sync" \
+  --rule never Weekly --null-recorder
 
 # Print the microphone mode Steno sees, and what the on-site gate makes of it.
 open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
@@ -392,7 +487,7 @@ These are properties of the approach, not bugs to be papered over:
 | M0 | Menu-bar skeleton + permission onboarding | **done** |
 | M1 | `onsite` audio + microphone-mode check | **done** |
 | M2 | `online` audio: process tap + aggregate device, 2-channel WAV | **done** |
-| M3 | Meeting detection, suggestion popup, auto-stop, rules | planned |
+| M3 | Meeting detection, suggestion popup, auto-stop, rules | **done** |
 | M4 | Screenshots across all displays | planned |
 | M5 | ASR + diarization + merge | planned |
 | M6 | Crash and interruption robustness | planned |

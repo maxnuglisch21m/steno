@@ -453,15 +453,33 @@ actor ProcessTapRecorder: AudioRecorder {
         let description: CATapDescription
         var tappedProcess: AudioObjectID?
         switch target {
-        case .process(let pid, let bundleId, _):
-            let objectID: AudioObjectID
-            do {
-                objectID = try AudioObjectID.processObject(forPID: pid)
-            } catch {
-                throw RecorderError.tapFailed("\(bundleId) (pid \(pid)): \(String(describing: error))")
+        case .process(let pids, let bundleId, _):
+            // Every process of the app, because the one reading the microphone and the
+            // one playing the meeting are routinely different helpers. A PID that has
+            // gone away in the meantime is skipped rather than failing the recording.
+            var objectIDs: [AudioObjectID] = []
+            for pid in pids {
+                guard let objectID = try? AudioObjectID.processObject(forPID: pid) else {
+                    Log.audio.notice(
+                        "pid \(pid, privacy: .public) of \(bundleId, privacy: .public) has no audio process object any more; skipping it"
+                    )
+                    continue
+                }
+                objectIDs.append(objectID)
             }
-            tappedProcess = objectID
-            description = CATapDescription(stereoMixdownOfProcesses: [objectID])
+            guard !objectIDs.isEmpty else {
+                // Nothing of the app is left to tap. A system-wide tap still captures
+                // whatever is being played, which beats refusing to record at all —
+                // and `meta.trigger` keeps saying which app was detected.
+                Log.audio.notice(
+                    "no audio process of \(bundleId, privacy: .public) is left; falling back to a system-wide tap"
+                )
+                return try makeSystemWideTapDescription()
+            }
+            // The first one is the app's own process, which is what the "did the app
+            // quit" listener attaches to.
+            tappedProcess = objectIDs[0]
+            description = CATapDescription(stereoMixdownOfProcesses: objectIDs)
         case .systemWide:
             // Excluding Steno's own process is what keeps a future notification sound
             // out of the recording — and, more importantly, what would stop a tap from
@@ -474,6 +492,22 @@ actor ProcessTapRecorder: AudioRecorder {
             }
             description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
         }
+        Self.configure(description)
+        return (description, tappedProcess)
+    }
+
+    /// Everything the Mac plays with Steno left out. The fallback of the fallback.
+    private func makeSystemWideTapDescription() throws -> (CATapDescription, AudioObjectID?) {
+        var excluded: [AudioObjectID] = []
+        if let own = try? AudioObjectID.processObject(forPID: getpid()) {
+            excluded.append(own)
+        }
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
+        Self.configure(description)
+        return (description, nil)
+    }
+
+    private static func configure(_ description: CATapDescription) {
         description.uuid = UUID()
         description.name = "Steno"
         // Private: the tap belongs to this process and shows up in no other app.
@@ -481,7 +515,6 @@ actor ProcessTapRecorder: AudioRecorder {
         // The user keeps hearing the meeting. Muting what is being tapped would be a
         // recorder that silences the call it is recording.
         description.muteBehavior = .unmuted
-        return (description, tappedProcess)
     }
 
     /// Reads the channel counts off the devices and works out which sample is which.

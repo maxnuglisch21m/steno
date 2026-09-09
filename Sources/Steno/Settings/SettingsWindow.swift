@@ -84,6 +84,9 @@ struct SettingsView: View {
 // MARK: - Allgemein
 
 private struct GeneralSettingsTab: View {
+    /// Set when the notification prompt came back with a no, so the tab can say so
+    /// instead of leaving a toggle that is on and does nothing.
+    @State private var notificationsRefused = false
     let environment: AppEnvironment
 
     @State private var launchAtLogin = false
@@ -133,9 +136,35 @@ private struct GeneralSettingsTab: View {
                     String(localized: "Mitteilung, wenn ein Transkript fertig ist"),
                     isOn: Binding(
                         get: { environment.settings.settings.notificationsEnabled },
-                        set: { environment.settings.settings.notificationsEnabled = $0 }
+                        set: { isOn in
+                            environment.settings.settings.notificationsEnabled = isOn
+                            // The one place, together with the onboarding window's
+                            // finish button, that asks macOS for permission to post
+                            // notifications — and only when the user has just switched
+                            // them on. Never at launch, never on its own.
+                            guard isOn else { return }
+                            Task {
+                                let granted = await Notifications.shared.requestAuthorization()
+                                if !granted {
+                                    notificationsRefused = true
+                                }
+                            }
+                        }
                     )
                 )
+                if notificationsRefused {
+                    HStack {
+                        Text(String(localized: "Mitteilungen sind in den Systemeinstellungen abgelehnt."))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button(String(localized: "Öffnen")) {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                }
             }
 
             Section {
@@ -476,6 +505,8 @@ private struct TranscriptionSettingsTab: View {
 // MARK: - Regeln
 
 private struct RulesSettingsTab: View {
+    /// Set when the calendar prompt came back with a no.
+    @State private var calendarRefused = false
     let environment: AppEnvironment
 
     @State private var newBundleId = ""
@@ -598,9 +629,27 @@ private struct RulesSettingsTab: View {
                 String(localized: "Titel des laufenden Kalendertermins lesen"),
                 isOn: Binding(
                     get: { settings.settings.useCalendarTitles },
-                    set: { settings.settings.useCalendarTitles = $0 }
+                    set: { isOn in
+                        settings.settings.useCalendarTitles = isOn
+                        // The only place calendar access is ever requested. Reading
+                        // happens later, and only while this stays on and macOS agrees.
+                        guard isOn else { return }
+                        Task {
+                            let granted = await CalendarTitleReader.requestAccess()
+                            if !granted {
+                                settings.settings.useCalendarTitles = false
+                                calendarRefused = true
+                            }
+                        }
+                    }
                 )
             )
+            if calendarRefused {
+                Text(String(localized: "Ohne Kalenderzugriff bleibt der Termintitel ungenutzt. In den Systemeinstellungen unter „Datenschutz & Sicherheit → Kalender“ wieder erlauben."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(String(localized: "Nur der Titel, nur während einer Aufnahme, nur um den Ordner zu benennen und Regeln zu prüfen. Zoom und Google Meet tragen im Fenstertitel keinen Meetingnamen — das ist der einzige Weg dorthin. Standardmäßig aus."))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

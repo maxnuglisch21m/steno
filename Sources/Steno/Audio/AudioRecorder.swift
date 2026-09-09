@@ -16,6 +16,19 @@ enum AudioInterruptionReason: Sendable, Equatable {
     /// Writing to `audio.wav` failed. A full volume is the case that matters.
     case writeFailed(String)
 
+    /// What `meta.stopReason` records for this interruption.
+    ///
+    /// A device that went away and capture the system ended are both `deviceLost`:
+    /// from the folder's point of view the audio hardware stopped being there. A
+    /// failed write is not — nothing was lost from the device, the disk refused — so
+    /// it leaves the field empty and `meta.error` says what happened instead.
+    var stopReason: MeetingStopReason? {
+        switch self {
+        case .inputDeviceLost, .captureStopped: return .deviceLost
+        case .writeFailed: return nil
+        }
+    }
+
     /// The sentence the menu shows and `meta.error` records.
     var localizedReason: String {
         switch self {
@@ -72,12 +85,26 @@ enum TapTarget: Sendable, Equatable {
     /// One app's mix, via `CATapDescription(stereoMixdownOfProcesses:)`.
     ///
     /// `bundleId` and `name` are carried along for `meta.trigger` and the folder name;
-    /// only `pid` reaches Core Audio, through
+    /// only the PIDs reach Core Audio, through
     /// `kAudioHardwarePropertyTranslatePIDToProcessObject`.
-    case process(pid: pid_t, bundleId: String, name: String)
+    ///
+    /// **Several PIDs, not one.** Chrome, Edge, and Teams do not capture or play a
+    /// meeting in the process the user launched — they hand it to a helper, and which
+    /// helper it is changes between calls. Tapping only the parent gives a silent ch0.
+    /// So detection collects every process belonging to the watchlist entry and they
+    /// are mixed down together, which is exactly what `stereoMixdownOfProcesses:`
+    /// takes. A process that has gone away by the time the tap is built is skipped;
+    /// if none of them resolve, the recorder falls back to a system-wide tap rather
+    /// than failing, because a recording of everything is worth more than no recording.
+    case process(pids: [pid_t], bundleId: String, name: String)
     /// Everything the Mac plays except Steno itself, via
     /// `CATapDescription(stereoGlobalTapButExcludeProcesses:)`.
     case systemWide
+
+    /// One app's mix, when only one process is known.
+    static func process(pid: pid_t, bundleId: String, name: String) -> TapTarget {
+        .process(pids: [pid], bundleId: bundleId, name: name)
+    }
 
     /// The app name for the folder, or `nil` when there is no single app — which is
     /// what makes the folder `…_Online`.
@@ -95,11 +122,20 @@ enum TapTarget: Sendable, Equatable {
         }
     }
 
+    var pids: [pid_t] {
+        switch self {
+        case .process(let pids, _, _): return pids
+        case .systemWide: return []
+        }
+    }
+
     /// One phrase for the log. Not localized: this is a log line, not an interface.
     var logDescription: String {
         switch self {
-        case .process(let pid, let bundleId, _): return "\(bundleId) (pid \(pid))"
-        case .systemWide: return "system-wide"
+        case .process(let pids, let bundleId, _):
+            return "\(bundleId) (pid \(pids.map(String.init).joined(separator: ", ")))"
+        case .systemWide:
+            return "system-wide"
         }
     }
 }

@@ -119,6 +119,7 @@ working when they are absent.
 | `models` | object | `{"asr": string, "diarizer": string}`. Written when transcription finishes. |
 | `error` | string | Why the recording ended in `failed`. Written together with that state. |
 | `speakers` | object | `{"expected": integer}` — how many people the user said were in the room. `onsite` only, and only when asked. See below. |
+| `stopReason` | string | What ended the capture: `manual`, `auto`, `sleep`, or `deviceLost`. See below. |
 
 ### `trigger`
 
@@ -141,6 +142,58 @@ independent, and conflating them would make "did the user start this?" unanswera
 
 Both keys are absent when no single app could be identified. The recording is then made
 with a system-wide tap and the folder is named `…_Online`.
+
+**`kind: "auto"` always carries both.** A recording detection started knows which
+watchlist entry triggered it, by construction — the entry *is* the identity of the
+meeting. `bundleId` is the watchlist entry's identifier, not the identifier of the
+individual process that was reading the microphone: Chrome and Edge and Teams run their
+audio in helper processes (`com.google.Chrome.helper`), all of which are tapped
+together, and all of which are recorded here as the entry they belong to.
+
+### `stopReason`
+
+```json
+"stopReason": "auto"
+```
+
+| Value | Meaning |
+|---|---|
+| `manual` | The user pressed stop, in the menu or with ⌥⌘S. |
+| `auto` | Detection saw no watched process reading the microphone for `autoStopDelay` seconds (specification §2, 30 s by default). `online` only — an `onsite` recording never stops itself. |
+| `sleep` | The Mac went to sleep. The recording was closed before the machine suspended. |
+| `deviceLost` | The input device disappeared, or capture was ended by the system. |
+
+Absent while `state` is `recording`, and absent for a recording whose ending nothing
+could account for — a failed write, for instance, where `error` says what happened and
+nothing was lost from the device.
+
+**It says nothing about success.** A recording can end for any of these reasons and
+still be `done`; `deviceLost` and a `failed` state usually travel together, but the two
+fields answer different questions and neither implies the other.
+
+### `title`
+
+```json
+"title": "Weekly Sync"
+```
+
+The meeting's name, when one could be found. Two sources, in this order:
+
+1. **The triggering app's window title**, read through `CGWindowListCopyWindowInfo` and
+   stripped of the app's own decoration: `Weekly Sync | Microsoft Teams` becomes
+   `Weekly Sync`, `(3) Design Review - Google Meet - Google Chrome` becomes
+   `Design Review`. Needs Screen Recording; without it, no title is read at all.
+2. **The calendar event running now**, if — and only if — the "read the running
+   calendar event's title" setting is on *and* macOS has granted calendar access. Off by
+   default. It exists because Zoom's window says nothing but `Zoom Meeting` and a Google
+   Meet tab shows the room code.
+
+A title that names the app rather than the meeting (`Microsoft Teams`, `Zoom Meeting`,
+`Meet`, a room code like `abc-defg-hij`) is treated as no title at all: the key is then
+absent, the folder is named after the app alone, and rules match on the app.
+
+The same string, sanitized, becomes the folder's title slug when the "include the title
+in the folder name" setting is on.
 
 ### `input`
 
@@ -241,6 +294,7 @@ The state is written continuously so that a crash is detectable. On the next lau
   "screenshots": 214,
   "started": "2026-09-09T14:30:12+02:00",
   "state": "done",
+  "stopReason": "auto",
   "title": "Weekly Sync",
   "trigger": {"bundleId": "com.microsoft.teams2", "kind": "auto", "name": "Teams"}
 }
@@ -265,6 +319,7 @@ The state is written continuously so that a crash is detectable. On the next lau
   "speakers": {"expected": 4},
   "started": "2026-09-09T14:30:12+02:00",
   "state": "done",
+  "stopReason": "manual",
   "trigger": {"kind": "manual"}
 }
 ```

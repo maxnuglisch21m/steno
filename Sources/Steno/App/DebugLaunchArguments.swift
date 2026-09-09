@@ -19,6 +19,15 @@ import StenoCore
 /// open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 /// open build/Build/Products/Debug/Steno.app --args --open-settings
 /// open build/Build/Products/Debug/Steno.app --args --open-onboarding
+///
+/// // M3: detection, popup, rules, auto-stop — without a meeting.
+/// open build/Build/Products/Debug/Steno.app --args \
+///   --simulate-detection com.microsoft.teams2 "Weekly Sync" \
+///   --auto-answer record --auto-stop 5 --simulate-detection-end 8
+/// open build/Build/Products/Debug/Steno.app --args \
+///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --auto-answer ignore
+/// open build/Build/Products/Debug/Steno.app --args \
+///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --rule never Weekly
 /// ```
 struct DebugLaunchArguments {
     var openSettings = false
@@ -38,9 +47,40 @@ struct DebugLaunchArguments {
     /// waiting for a real meeting to start.
     var tapTargetBundleId: String?
 
+    // MARK: M3
+
+    /// `--simulate-detection <bundle id> [title]`: pretends that app started reading
+    /// the microphone, with that window title, and lets the whole of specification §2
+    /// run on it — debounce, rules, popup, recording, auto-stop.
+    ///
+    /// The bundle identifier does not have to belong to a running app. The tap target
+    /// then resolves to nothing and `ProcessTapRecorder` falls back to a system-wide
+    /// tap, which is a real recording of a real Mac and exactly what is wanted here.
+    var simulateDetection: (bundleId: String, title: String?)?
+    /// `--simulate-detection-end <seconds>`: how long after the trigger the fake app
+    /// stops reading the microphone, which is what starts the auto-stop clock.
+    var simulateDetectionEnd: Double?
+    /// `--auto-answer record|ignore`: answers the suggestion panel a second after it
+    /// appears, so a run needs no click.
+    var autoAnswer: SuggestionPanel.Answer?
+    /// `--auto-stop <seconds>`: shortens `autoStopDelay`, so auto-stop can be observed
+    /// in a ten-second run instead of a fifty-second one.
+    var autoStopDelay: TimeInterval?
+    /// `--suggestion-timeout <seconds>`: shortens the twenty-second panel timeout.
+    var suggestionTimeout: TimeInterval?
+    /// `--rule never|ask|always <pattern>`: injects one rule ahead of the user's own,
+    /// for this run only.
+    var injectedRule: RecordingRule?
+
     var isActive: Bool {
-        openSettings || openOnboarding || printMicrophoneMode || simulate != nil
+        openSettings || openOnboarding || printMicrophoneMode
+            || simulate != nil || simulateDetection != nil
     }
+
+    /// Whether the app's own detection may run. A simulation drives detection itself
+    /// with a fake process list, and every other debug run wants it off entirely, so
+    /// that a real meeting on this Mac cannot interrupt the thing being measured.
+    var wantsAppDetection: Bool { !isActive }
 
     init(_ arguments: [String]) {
         var index = 1
@@ -55,6 +95,35 @@ struct DebugLaunchArguments {
             case "--tap-target":
                 tapTargetBundleId = arguments[safe: index + 1]
                 index += 1
+            case "--simulate-detection":
+                let bundleId = arguments[safe: index + 1] ?? "com.microsoft.teams2"
+                index += 1
+                // The title is optional, and must not swallow the next flag.
+                var title: String?
+                if let next = arguments[safe: index + 1], !next.hasPrefix("--") {
+                    title = next
+                    index += 1
+                }
+                simulateDetection = (bundleId, title)
+            case "--simulate-detection-end":
+                simulateDetectionEnd = Double(arguments[safe: index + 1] ?? "")
+                index += 1
+            case "--auto-answer":
+                autoAnswer = SuggestionPanel.Answer(rawValue: arguments[safe: index + 1] ?? "")
+                index += 1
+            case "--null-recorder":
+                useNullRecorder = true
+            case "--auto-stop":
+                autoStopDelay = Double(arguments[safe: index + 1] ?? "")
+                index += 1
+            case "--suggestion-timeout":
+                suggestionTimeout = Double(arguments[safe: index + 1] ?? "")
+                index += 1
+            case "--rule":
+                let action = RecordingRuleAction(rawValue: arguments[safe: index + 1] ?? "") ?? .ask
+                let pattern = arguments[safe: index + 2] ?? ""
+                injectedRule = RecordingRule(pattern: pattern, action: action)
+                index += 2
             case "--simulate-recording", "--simulate-null-recording":
                 useNullRecorder = arguments[index] == "--simulate-null-recording"
                 let seconds = Double(arguments[safe: index + 1] ?? "") ?? 3
@@ -95,6 +164,10 @@ struct DebugLaunchArguments {
                 Log.app.notice("debug: \(line, privacy: .public)")
                 FileHandle.standardError.write(Data(line.utf8))
             }
+        }
+        if let simulateDetection {
+            runDetectionSimulation(simulateDetection, in: environment)
+            return
         }
         guard let simulate else { return }
         runSimulation(simulate, in: environment)
@@ -172,6 +245,138 @@ struct DebugLaunchArguments {
             FileHandle.standardError.write(Data(line.utf8))
             NSApp.terminate(nil)
         }
+    }
+
+    // MARK: - M3: detection
+
+    /// Runs specification §2 end to end against a process list this function writes.
+    ///
+    /// Everything downstream of the fake list is the real thing: the real state
+    /// machine with its debounce, the real rules, the real panel, the real recorder,
+    /// the real `meta.json`. Only the answer to "is Teams reading the microphone" is
+    /// invented — which is the one part that cannot be arranged on a Mac with no
+    /// meeting on it.
+    @MainActor
+    private func runDetectionSimulation(
+        _ simulate: (bundleId: String, title: String?),
+        in environment: AppEnvironment
+    ) {
+        let settings = environment.settings
+        if useNullRecorder {
+            environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
+        }
+        if let autoStopDelay { settings.settings.autoStopDelay = autoStopDelay }
+        if let injectedRule {
+            // Ahead of the user's own rules, because first match wins and this run is
+            // about the injected one.
+            settings.settings.rules.insert(injectedRule, at: 0)
+        }
+
+        // The watchlist has to know the app, or nothing about it is a meeting.
+        let app: WatchedApp
+        if let known = settings.settings.watchlist.first(where: { $0.bundleId == simulate.bundleId }) {
+            app = known
+        } else {
+            app = WatchedApp(
+                bundleId: simulate.bundleId,
+                name: String(simulate.bundleId.split(separator: ".").last ?? "App")
+            )
+            settings.settings.watchlist.append(app)
+        }
+
+        let source = FakeProcessAudioSource()
+        environment.detector.useSource(source)
+        // A two-second debounce rather than five: the five seconds are tested against
+        // a clock in `MeetingDetectorLogicTests`, and this run is about everything
+        // downstream of them.
+        environment.detector.setTiming(
+            MeetingDetectorTiming(trigger: 2, autoStop: settings.settings.autoStopDelay, rearm: 60)
+        )
+        environment.ruleEngine.useTitleSource(FixedMeetingTitleSource(simulate.title))
+        if let suggestionTimeout {
+            environment.detectionController.suggestionTimeout = suggestionTimeout
+        }
+
+        let end = simulateDetectionEnd
+        let answer = autoAnswer
+        // The permission gate is not what this run tests, and faking the snapshot is
+        // not enough: the permission monitor refreshes in the background and would
+        // overwrite it during the seconds this simulation spends waiting.
+        environment.coordinator.ignoresPermissionGate = true
+
+        Task { @MainActor in
+            environment.detectionController.start()
+            source.setInput(true, bundleId: app.bundleId)
+
+            // The panel, if one appears, and the answer that would otherwise be a click.
+            if let answer {
+                await Self.waitFor(seconds: 30) { SuggestionPanel.shared.isVisible }
+                if SuggestionPanel.shared.isVisible {
+                    Self.report("suggestion panel at \(SuggestionPanel.shared.frameDescription ?? "?")")
+                    try? await Task.sleep(for: .seconds(1))
+                    SuggestionPanel.shared.answerForTesting(answer)
+                } else {
+                    Self.report("no suggestion panel appeared")
+                }
+            } else {
+                await Self.waitFor(seconds: 10) { SuggestionPanel.shared.isVisible }
+                Self.report(
+                    "suggestion panel: \(SuggestionPanel.shared.frameDescription ?? "none")"
+                )
+            }
+
+            // Opening a tap and an aggregate device takes a moment, and the recording
+            // does not exist until it has: waited for explicitly, so that the report
+            // below cannot mistake "still starting" for "never started".
+            await Self.waitFor(seconds: 25) { environment.appState.phase.isRecording }
+            let didRecord = environment.appState.phase.isRecording
+            Self.report(didRecord ? "recording started" : "no recording started")
+
+            // The meeting ends: the fake app stops reading the microphone, which is
+            // what starts the auto-stop clock.
+            if let end, didRecord {
+                let deadline = ContinuousClock.now.advanced(by: .seconds(end))
+                while ContinuousClock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                source.setInput(false, bundleId: app.bundleId)
+                Self.report("simulated meeting end")
+            }
+
+            // Auto-stop, then the folder being finished. Generously bounded: this is a
+            // debug run, and hanging for ever would be worse than reporting nothing.
+            if didRecord {
+                let budget = settings.settings.autoStopDelay + 40
+                await Self.waitFor(seconds: budget) { environment.appState.phase == .idle }
+            }
+
+            let folder = environment.appState.lastMeetingURL
+            Self.report(
+                """
+                detection simulation for \(app.bundleId) → \(folder?.stenoPath ?? "no recording")\
+                \(Self.audioSummary(in: folder))
+                """
+            )
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Waits until `condition` holds or the budget runs out. Polls, because the things
+    /// being waited for are `@Observable` properties and an AppKit window's visibility.
+    @MainActor
+    private static func waitFor(seconds: TimeInterval, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    /// One line on standard error and one in the unified log, which is how every debug
+    /// run reports what it saw.
+    private static func report(_ message: String) {
+        let line = "steno-debug: \(message)\n"
+        Log.app.notice("debug: \(line, privacy: .public)")
+        FileHandle.standardError.write(Data(line.utf8))
     }
 
     /// " · audio.wav 1440044 bytes", or nothing when no audio was written.
