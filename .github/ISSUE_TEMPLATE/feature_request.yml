@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest a change to what Steno records or how it stores it.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Steno is deliberately a raw-data recorder. Summaries, context enrichment,
+        Obsidian export, OCR, and any cloud processing are out of scope by design
+        (see `docs/SPEC.md`) — those belong in a separate tool that reads the
+        files Steno writes.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is awkward or missing today? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Audio capture
+        - Meeting detection / rules
+        - Screenshots
+        - Transcription / diarization
+        - File layout and metadata
+        - Menu bar and settings UI
+        - Updates and packaging
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This does not ask for summaries, OCR, or cloud processing.
+          required: true

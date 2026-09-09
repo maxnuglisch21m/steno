@@ -1,0 +1,19 @@
+# Generated Xcode project (XcodeGen — run `make gen`)
+Steno.xcodeproj/
+
+# Build products
+build/
+dist/
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+*.xcresult
+
+# macOS
+.DS_Store
+
+# Secrets — never commit signing or update keys
+*.key
+*.p12
+*.pem

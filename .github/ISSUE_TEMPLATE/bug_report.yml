@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Steno behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach recordings, transcripts, or screenshots that contain
+        confidential meeting content. Redact anything you paste.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start an onsite recording
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Recording mode
+      options:
+        - online (Teams / Zoom / Meet)
+        - onsite (room recording)
+        - not related to a recording
+    validations:
+      required: true
+
+  - type: input
+    id: steno-version
+    attributes:
+      label: Steno version
+      description: Menu bar → Settings → Updates, or the version shown in Finder's Get Info.
+      placeholder: "0.1.0 (1)"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and Mac model
+      placeholder: "macOS 15.4, MacBook Pro M3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: meta-json
+    attributes:
+      label: meta.json of the affected recording
+      description: >-
+        From the meeting folder. Remove the `title` field and anything else
+        confidential; `state`, `mode`, `error`, `channels`, and `input` are the
+        interesting parts.
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: >-
+        `log show --predicate 'subsystem == "de.21m.steno"' --last 30m --info`
+      render: shell

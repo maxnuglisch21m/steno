@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/maxnuglisch21m/steno/discussions
+    about: Ask about usage, permissions, or the data layout.
