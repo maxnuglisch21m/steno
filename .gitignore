@@ -20,3 +20,4 @@ xcuserdata/
 
 # Coverage output from swift test
 *.profraw
+build-review/

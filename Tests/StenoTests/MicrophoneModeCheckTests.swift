@@ -56,8 +56,15 @@ struct MicrophoneModeCheckTests {
     // MARK: - The strings that end up in the interface and in meta.json
 
     @Test("the blocked reason is the sentence from the specification")
-    func blockedReasonWording() {
-        #expect(MicrophoneModeCheck.blockedReason == "Sprachisolierung dämpft die anderen Teilnehmer.")
+    func blockedReasonWording() throws {
+        // The German catalog is asked for directly: the test bundle follows the
+        // runner's locale, and CI runs in English.
+        let german = try #require(
+            Bundle.main.path(forResource: "de", ofType: "lproj").flatMap(Bundle.init(path:))
+        )
+        let key = "Sprachisolierung dämpft die anderen Teilnehmer."
+        #expect(german.localizedString(forKey: key, value: nil, table: nil) == key)
+        #expect(!MicrophoneModeCheck.blockedReason.isEmpty)
         #expect(StartBlocker.voiceIsolationActive.localizedReason == MicrophoneModeCheck.blockedReason)
     }
 
