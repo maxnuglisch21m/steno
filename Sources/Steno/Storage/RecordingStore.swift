@@ -90,6 +90,17 @@ final class RecordingStore {
         meetingFolders(in: root).first
     }
 
+    /// What a folder's `meta.json` says its state is, or `nil` when it cannot be read.
+    ///
+    /// The menu needs the state of exactly one folder — the newest — to decide whether
+    /// to offer "erneut verarbeiten", and reading one small JSON file when the menu
+    /// opens is cheaper than keeping a cache honest.
+    func state(of folder: URL) -> MeetingState? {
+        let url = folder.appendingPathComponent(Self.metaFileName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? MeetingMeta.decode(from: data).state
+    }
+
     /// A free folder name for a recording that is about to start, and the URL it maps to.
     func meetingFolderURL(
         in root: URL,

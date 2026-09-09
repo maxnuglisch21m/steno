@@ -64,6 +64,18 @@ struct MenuBarView: View {
                 : appState.lastMeetingURL?.lastPathComponent ?? ""
         )
 
+        // Only for a meeting that ended in `failed`. A transcript that is already
+        // written has nothing to redo, and offering it anyway would invite the user to
+        // overwrite a good transcript with the same one.
+        if appState.canReprocessLastMeeting {
+            Button(String(localized: "Letztes Meeting erneut verarbeiten")) {
+                if let url = appState.lastMeetingURL {
+                    environment.transcription.reprocess(url)
+                }
+            }
+            .help(String(localized: "Spracherkennung und Sprechertrennung noch einmal starten."))
+        }
+
         Button(String(localized: "Ordner öffnen")) {
             environment.store.openRootFolder(environment.settings.rootFolderURL)
         }

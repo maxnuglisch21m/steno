@@ -9,8 +9,11 @@
 #           interval (the shorter one for a frame marked `_active`).
 #   §11.11  nothing was written into the folder except the documented set.
 #
-# It also checks what §6 says `meta.json` must agree with: `screenshots` equals the
-# number of index lines, and `displays` is not empty.
+# It also checks what §6 says `meta.json` must agree with — `screenshots` equals the
+# number of index lines, `displays` accounts for every frame — and what §5 says about
+# the transcript: `transcript.json` parses, agrees with `meta.json` about the mode,
+# names the models it was made with, has a `transcript.md` beside it, and carries a
+# `ME` speaker only in `online` mode. `meta.audio` has to name a file that is there.
 #
 # Usage:
 #   scripts/verify-recording.sh ~/Meetings/2026-09-09_1430_Vorort
@@ -241,7 +244,14 @@ if meta is not None:
 
     displays = meta.get("displays")
     if not isinstance(displays, list) or not displays:
-        fail("meta.displays is empty — no display was captured")
+        # A recording made without the Screen Recording permission has no displays and
+        # no index, and that is a permission the user is allowed not to grant — the
+        # audio and the transcript are unaffected. It is only a violation when frames
+        # were written and `meta.displays` does not account for them.
+        if entries:
+            fail("meta.displays is empty although screens.jsonl has lines")
+        else:
+            note("no display was captured — Screen Recording is presumably not granted")
     else:
         indices = set()
         for display in displays:
@@ -284,6 +294,9 @@ KNOWN_FILES = {
     "meta.json",
 }
 KNOWN_DIRECTORIES = {"screens", "_work"}
+# `_work/` is scratch space for transcription and is deleted when it succeeds; one
+# left behind is the debris of a run that failed, and worth saying so about.
+
 IGNORED = {".DS_Store"}
 
 for name in sorted(os.listdir(folder)):
@@ -294,6 +307,8 @@ for name in sorted(os.listdir(folder)):
     if os.path.isdir(path):
         if name not in KNOWN_DIRECTORIES:
             fail("unexpected directory in the meeting folder: %s/" % name)
+        elif name == "_work":
+            note("_work/ is left over from a transcription that did not finish")
     elif name not in KNOWN_FILES:
         fail("unexpected file in the meeting folder: %s" % name)
 
@@ -359,6 +374,55 @@ for display in sorted(by_display):
             else "n/a",
         )
     )
+
+transcript_path = os.path.join(folder, "transcript.json")
+if os.path.isfile(transcript_path):
+    try:
+        with open(transcript_path, encoding="utf-8") as handle:
+            transcript = json.load(handle)
+    except (ValueError, OSError) as error:
+        fail("transcript.json does not parse: %s" % error)
+    else:
+        utterances = transcript.get("utterances")
+        if not isinstance(utterances, list):
+            fail("transcript.json has no utterances array")
+            utterances = []
+        speakers = []
+        for utterance in utterances:
+            speaker = utterance.get("speaker")
+            if speaker not in speakers:
+                speakers.append(speaker)
+        models = transcript.get("models") or {}
+        if meta is not None and transcript.get("mode") != meta.get("mode"):
+            fail("transcript.json and meta.json disagree about the mode")
+        if meta is not None and meta.get("mode") == "onsite" and "ME" in speakers:
+            # §5: ME only exists where channel 1 physically is the user.
+            fail("an onsite transcript claims a ME speaker")
+        if not models.get("asr") or not models.get("diarizer"):
+            fail("transcript.json does not name the models it was made with")
+        print(
+            "transcript  %d utterance(s), speakers %s, models %s/%s"
+            % (
+                len(utterances),
+                ",".join(str(s) for s in speakers) or "none",
+                models.get("asr", "?"),
+                models.get("diarizer", "?"),
+            )
+        )
+        if not os.path.isfile(os.path.join(folder, "transcript.md")):
+            fail("transcript.json is there but transcript.md is not")
+elif meta is not None and meta.get("state") == "done":
+    fail("the meeting is done but has no transcript.json")
+
+if meta is not None:
+    audio = meta.get("audio")
+    if audio is not None:
+        if not isinstance(audio, str):
+            fail("meta.audio is not a file name")
+        elif not os.path.isfile(os.path.join(folder, audio)):
+            fail("meta.audio names %s, which is not in the folder" % audio)
+        else:
+            print("audio       %s, %.1f MB" % (audio, os.path.getsize(os.path.join(folder, audio)) / 1_048_576.0))
 
 for message in notes:
     print("note   %s" % message)

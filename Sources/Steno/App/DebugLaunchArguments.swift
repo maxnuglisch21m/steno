@@ -32,6 +32,10 @@ import StenoCore
 ///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --auto-answer ignore
 /// open build/Build/Products/Debug/Steno.app --args \
 ///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --rule never Weekly
+///
+/// // M5: the models, and transcription of a folder that already has audio.
+/// open build/Build/Products/Debug/Steno.app --args --download-models
+/// open build/Build/Products/Debug/Steno.app --args --transcribe ~/Meetings/2026-09-09_1430_Vorort
 /// ```
 struct DebugLaunchArguments {
     var openSettings = false
@@ -80,9 +84,28 @@ struct DebugLaunchArguments {
     /// for this run only.
     var injectedRule: RecordingRule?
 
+    // MARK: M5
+
+    /// `--download-models`: downloads, compiles, and warms the models, then reports
+    /// where they are and how big they are, and quits.
+    ///
+    /// The one command in the whole app that touches the network. It exists because the
+    /// download is a once-per-Mac step that takes minutes, and doing it from the
+    /// command line — before a meeting rather than during one — is how the first
+    /// transcription avoids paying for it.
+    var downloadModels = false
+    /// `--transcribe <folder>`: hands an existing meeting folder to the queue and quits
+    /// when it is finished, printing the resulting state and the head of the transcript.
+    ///
+    /// Everything downstream of the audio file is the real thing: the real splitter,
+    /// the real models, the real merge, the real `meta.json`. Only the recording is
+    /// missing, which is the part that needs a meeting.
+    var transcribeFolder: URL?
+
     var isActive: Bool {
         openSettings || openOnboarding || printMicrophoneMode
             || simulate != nil || simulateDetection != nil
+            || downloadModels || transcribeFolder != nil
     }
 
     /// Whether the app's own detection may run. A simulation drives detection itself
@@ -134,6 +157,16 @@ struct DebugLaunchArguments {
                 let pattern = arguments[safe: index + 2] ?? ""
                 injectedRule = RecordingRule(pattern: pattern, action: action)
                 index += 2
+            case "--download-models":
+                downloadModels = true
+            case "--transcribe":
+                if let path = arguments[safe: index + 1] {
+                    transcribeFolder = URL(
+                        fileURLWithPath: (path as NSString).expandingTildeInPath,
+                        isDirectory: true
+                    )
+                }
+                index += 1
             case "--simulate-recording", "--simulate-null-recording":
                 useNullRecorder = arguments[index] == "--simulate-null-recording"
                 let seconds = Double(arguments[safe: index + 1] ?? "") ?? 3
@@ -174,6 +207,14 @@ struct DebugLaunchArguments {
                 Log.app.notice("debug: \(line, privacy: .public)")
                 FileHandle.standardError.write(Data(line.utf8))
             }
+        }
+        if downloadModels {
+            runModelDownload(in: environment)
+            return
+        }
+        if let transcribeFolder {
+            runTranscription(of: transcribeFolder, in: environment)
+            return
         }
         if let simulateDetection {
             runDetectionSimulation(simulateDetection, in: environment)
@@ -257,6 +298,122 @@ struct DebugLaunchArguments {
             FileHandle.standardError.write(Data(line.utf8))
             NSApp.terminate(nil)
         }
+    }
+
+    // MARK: - M5: models and transcription
+
+    /// Downloads the models, warms them, and reports what landed where.
+    @MainActor
+    private func runModelDownload(in environment: AppEnvironment) {
+        let models = environment.models
+        Task { @MainActor in
+            let started = Date()
+            var warmSeconds: TimeInterval = 0
+            do {
+                // The download and the compile.
+                try await models.prepare(warm: false)
+                let downloaded = Date()
+                // Then one prediction through every model, which is the step that
+                // takes minutes on a cold Mac and would otherwise happen inside the
+                // first meeting's transcription.
+                let warmStart = Date()
+                await models.warmUpIfNeeded()
+                warmSeconds = Date().timeIntervalSince(warmStart)
+                let total = Self.seconds(Date().timeIntervalSince(started))
+                let fetch = Self.seconds(downloaded.timeIntervalSince(started))
+                Self.report(
+                    "models ready in \(total) (download+compile \(fetch), warm-up \(Self.seconds(warmSeconds)))"
+                )
+            } catch {
+                Self.report("model download failed: \(error.localizedDescription)")
+            }
+            Self.report("model directory \(models.modelsDirectory.stenoPath)")
+            let asrSize = Self.megabytes(ModelManager.directorySize(of: models.asrDirectory))
+            let diarizerSize = Self.megabytes(ModelManager.directorySize(of: models.diarizerDirectory))
+            Self.report(
+                "sizes: total \(Self.megabytes(models.installedBytes())), asr \(asrSize), diarizer \(diarizerSize)"
+            )
+            Self.report("installed=\(models.isInstalled) warm=\(models.isWarm)")
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Transcribes a folder that already has `audio.wav` and a `meta.json`.
+    @MainActor
+    private func runTranscription(of folder: URL, in environment: AppEnvironment) {
+        Task { @MainActor in
+            guard let session = try? RecordingSession(existing: folder) else {
+                Self.report("no readable meta.json in \(folder.stenoPath)")
+                NSApp.terminate(nil)
+                return
+            }
+            // A folder left in `recording` — a crash, or one assembled by hand for a
+            // test — is moved on rather than refused: M6 does the same thing at launch.
+            if session.meta.state == .recording {
+                try? session.transition(to: .transcribing)
+            }
+            if session.meta.state == .done || session.meta.state == .failed {
+                environment.transcription.reprocess(folder)
+            } else {
+                environment.transcription.enqueue(folder)
+            }
+
+            // Waited on the folder rather than on the menu-bar phase: the queue starts
+            // its work in a task of its own, so the phase is still idle for a moment
+            // after the hand-over and a run that watched it would quit before anything
+            // had begun. Generously bounded — an hour of audio takes minutes, and a
+            // cold model takes minutes more — because hanging for ever would be worse
+            // than reporting nothing.
+            await Self.waitFor(seconds: 3600) {
+                let state = environment.store.state(of: folder)
+                return state == .done || state == .failed
+            }
+
+            let state = environment.store.state(of: folder)
+            Self.report("\(folder.lastPathComponent) → state \(state?.rawValue ?? "unreadable")")
+            Self.report(Self.transcriptSummary(in: folder))
+            for line in Self.head(ofTranscriptIn: folder, lines: 5) {
+                Self.report("transcript.md | \(line)")
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// " · transcript.md 12 line(s) · audio.m4a 4.1 MB · _work gone"
+    private static func transcriptSummary(in folder: URL) -> String {
+        var parts: [String] = []
+        for name in ["transcript.json", "transcript.md", "audio.wav", "audio.m4a", "audio.flac"] {
+            let url = folder.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.stenoPath) else { continue }
+            parts.append("\(name) \(megabytes(AudioTranscoder.size(of: url)))")
+        }
+        let work = ChannelSplitter.workDirectory(in: folder)
+        parts.append(
+            FileManager.default.fileExists(atPath: work.stenoPath) ? "_work kept" : "_work gone"
+        )
+        return "files: " + parts.joined(separator: " · ")
+    }
+
+    /// The first `lines` lines of `transcript.md` that carry speech, or the header when
+    /// there is none.
+    private static func head(ofTranscriptIn folder: URL, lines: Int) -> [String] {
+        guard
+            let text = try? String(
+                contentsOf: folder.appendingPathComponent("transcript.md"),
+                encoding: .utf8
+            )
+        else { return ["no transcript.md"] }
+        let all = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        let speech = all.filter { $0.hasPrefix("[") }
+        return Array((speech.isEmpty ? all : speech).prefix(lines))
+    }
+
+    private static func seconds(_ interval: TimeInterval) -> String {
+        String(format: "%.1f s", interval)
+    }
+
+    private static func megabytes(_ bytes: Int64) -> String {
+        String(format: "%.1f MB", Double(bytes) / 1_048_576)
     }
 
     // MARK: - M3: detection

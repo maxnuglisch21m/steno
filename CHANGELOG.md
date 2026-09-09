@@ -13,6 +13,55 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **Transcription (M5).** A recording that stops now moves to `state: transcribing`
+  and goes into a serial queue — one meeting at a time, in the background, with the
+  step and the progress in the menu-bar ring. `audio.wav` → one 16 kHz mono work file
+  per channel → Parakeet → pyannote → `TranscriptMerger` → `transcript.json` and
+  `transcript.md` → audio archive → `state: done` → a notification. All of it on this
+  Mac; the only network access in the whole app is the one-time model download.
+- **`ChannelSplitter`.** `audio.wav` is read a second at a time with `AVAudioFile` and
+  each channel resampled into `_work/room16k.wav` and, for `online`, `_work/mic16k.wav`
+  with `AVAudioConverter` — never the whole file in memory, and never a byte of the
+  container parsed by hand. FluidAudio's own `AudioConverter` cannot do this: it
+  downmixes every channel to mono, and the two channels of an `online` recording are
+  the whole point. `_work/` is deleted when transcription succeeds and **kept when it
+  fails**, because the inputs of a failed run are the only thing that says why.
+- **`FluidASR`.** Parakeet TDT 0.6 B, v3 by default, loaded once per launch. Each pass
+  gets its own decoder state, so the microphone pass does not continue the room pass's
+  linguistic context. `seamGapRepair` stays on.
+- **`WordAssembler` in `StenoCore`.** The recognizer emits SentencePiece pieces —
+  `Centerplan` arrives as `▁Center` plus `plan` — and the merger wants words. The
+  assembly is pure logic, so it is tested without a 500 MB checkpoint: boundary
+  markers, leading spaces, control pieces, spans, and averaged confidence.
+- **`FluidDiarizer`.** pyannote community-1 plus VBx on channel 0 in both modes. The
+  `onsite` speaker-count hint from `meta.speakers.expected` is fed in as
+  `clustering.minSpeakers` / `maxSpeakers`, clamped to 2–8.
+- **`AudioTranscoder`.** After the transcript is safely written, `audio.wav` becomes
+  `audio.m4a` (AAC-LC, 128 kbps for two channels, 64 kbps for one), `audio.flac`, or
+  stays as it is. The channels are never mixed down, and the WAV is deleted only after
+  the archive has been read back and found to hold the same channels and the same
+  length. A failed transcode is **not** a failed meeting: the WAV stays and
+  `meta.audio` says so.
+- **`ModelManager` does the download.** `AsrModels.downloadAndLoad` and
+  `OfflineDiarizerManager.prepareModels`, both pointed at
+  `~/Library/Application Support/Steno/Models/` — roughly 500 MB, once — with a coarse
+  progress in the onboarding window's fourth row and in Settings → Transkription. The
+  first load of a fresh Core ML model compiles it for this Mac's Neural Engine and can
+  take minutes, so that step is **named** rather than reported as a download, and the
+  models are warmed once afterwards so the first meeting is not what pays for it.
+- **"Letztes Meeting erneut verarbeiten"**, in the menu, shown only while the newest
+  meeting reads `failed`. It moves the folder back to `transcribing` and queues it.
+- **The queue survives a relaunch.** It is written to `UserDefaults` as a list of
+  folders with attempt counts, dropped after three attempts rather than relaunching
+  into the same failure for ever, and picked up again at launch.
+- **`--download-models` and `--transcribe <folder>`**, debug builds only: the first
+  downloads, compiles, and warms the models and reports where they landed and how big
+  they are; the second runs the whole pipeline over an existing meeting folder and
+  prints the resulting state and the head of `transcript.md`.
+- **`docs/format-fixtures/`** — a complete example meeting folder, written by
+  `StenoCore`'s own encoders, that `FormatFixtureTests` decodes, checks, re-encodes,
+  and compares byte for byte. A format change that is not deliberate now fails there
+  instead of in somebody else's parser.
 - **Screenshots across all displays (M4).** One `SCStream` per display at 1 fps,
   `queueDepth 3`, cursor on, no audio, BGRA in sRGB, longer edge scaled to at most
   1920 px. Only frames whose `SCStreamFrameInfo.status` is `.complete` (or `.started`,
@@ -238,6 +287,19 @@ release notes, and fails if it is missing.
 
 ### Changed
 
+- **A finished recording is `transcribing`, not `done`.** `RecordingCoordinator` hands
+  the folder to the queue, which is what writes the transcript and moves it to `done`.
+  A folder that said `done` with no transcript in it was claiming something that was
+  not there.
+- **`scripts/verify-recording.sh` checks the transcript too**: `transcript.json`
+  parses, agrees with `meta.json` about the mode, names its models, has a
+  `transcript.md` beside it, and carries `ME` only in `online` mode; `meta.audio` names
+  a file that exists; a `done` meeting has a transcript at all. An empty
+  `meta.displays` is now a note rather than a failure when no screenshots were written
+  — a recording made without Screen Recording is a legitimate recording.
+- **`meta.models.diarizer` is `pyannote-community-1`**, the model, rather than
+  `speaker-diarization`, the Hugging Face repository it ships in. That is the name
+  specification §5 writes and the one a reader can look up.
 - Screenshots are captured in **both** modes, `onsite` included (specification §1): the
   screen rarely changes in a room, so it costs almost nothing.
 - Nothing about screenshots can fail a recording. A missing Screen Recording

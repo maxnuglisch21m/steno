@@ -8,7 +8,7 @@ import StenoCore
 /// that happens to need transcription or updates.
 ///
 /// The real users of these packages arrive later: `Update/UpdaterController` (M7)
-/// and `Transcription/` (M5).
+/// and `Transcription/`.
 enum Dependencies {
     /// The updater controller class Sparkle exposes to app code.
     static let updaterControllerType: any AnyObject.Type = SPUStandardUpdaterController.self

@@ -255,17 +255,41 @@ struct ModelManagerTests {
         #expect(manager.diarizerDirectory.lastPathComponent == "speaker-diarization")
     }
 
-    @Test("the download is not available yet and says so")
-    func downloadIsNotImplemented() async {
+    @Test("the download button is offered while nothing is running")
+    func downloadIsAvailable() {
+        // Deliberately not started here: the download is the one thing in Steno that
+        // touches the network, and a test suite that pulls half a gigabyte off
+        // Hugging Face is a test suite nobody runs. What can be checked without it is
+        // the gate around it and the sentences it shows.
         let manager = ModelManager(
             directory: FileManager.default.temporaryDirectory
                 .appendingPathComponent("steno-models-\(UUID().uuidString)", isDirectory: true)
         )
-        #expect(!manager.canDownload)
+        #expect(manager.canDownload)
         #expect(!manager.downloadUnavailableReason.isEmpty)
-        await #expect(throws: ModelManager.Failure.self) {
-            try await manager.download()
+        #expect(!manager.isWarm)
+    }
+
+    @Test("every stage of the download says what it is doing")
+    func stagesAreNamed() {
+        for stage: ModelManager.Stage in [
+            .downloadingASR, .downloadingDiarizer, .compiling(nil), .compiling("Encoder.mlmodelc"), .warming
+        ] {
+            #expect(!stage.localizedDescription.isEmpty)
         }
+        // The compile stage is the one that takes minutes on a cold Mac with nothing
+        // to show for it, so it says so rather than looking like a hang.
+        #expect(ModelManager.Stage.compiling(nil).localizedDescription.contains("Minuten"))
+        #expect(ModelManager.Stage.compiling("Encoder").localizedDescription.contains("Encoder"))
+    }
+
+    @Test("the model names written into meta.json are the ones the specification uses")
+    func modelIdentifiers() {
+        let manager = ModelManager(asrVersion: .v3)
+        #expect(manager.modelIdentifiers.asr == "parakeet-tdt-0.6b-v3")
+        #expect(manager.modelIdentifiers.diarizer == "pyannote-community-1")
+        manager.asrVersion = .v2
+        #expect(manager.modelIdentifiers.asr == "parakeet-tdt-0.6b-v2")
     }
 }
 

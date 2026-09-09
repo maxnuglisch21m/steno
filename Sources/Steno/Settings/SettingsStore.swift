@@ -246,7 +246,10 @@ final class SettingsStore {
     /// Whether the onboarding window has already been shown once.
     static let onboardingShownKey = "onboardingShown"
 
-    private let defaults: UserDefaults
+    /// The store the settings live in. Shared with the transcription queue, which
+    /// persists its list of folders alongside them: both are app state rather than
+    /// meeting data, and one store is easier to clear than two.
+    let defaults: UserDefaults
     private var isLoading = false
 
     /// The settings. Assigning to any property persists the whole blob.

@@ -1,0 +1,126 @@
+{
+  "confidence" : {
+    "asr_mic" : 0.94,
+    "asr_room" : 0.89
+  },
+  "diarization" : [
+    {
+      "end" : 15.2,
+      "speaker" : "S1",
+      "start" : 12.1
+    },
+    {
+      "end" : 18.1,
+      "speaker" : "S2",
+      "start" : 15.3
+    },
+    {
+      "end" : 21.6,
+      "speaker" : "S2",
+      "start" : 18.8
+    }
+  ],
+  "mode" : "online",
+  "models" : {
+    "asr" : "parakeet-tdt-0.6b-v3",
+    "diarizer" : "pyannote-community-1"
+  },
+  "utterances" : [
+    {
+      "end" : 15.02,
+      "speaker" : "S1",
+      "start" : 12.3,
+      "text" : "Also der Centerplan ist durch.",
+      "tokens" : [
+        {
+          "t" : 12.3,
+          "w" : "Also"
+        },
+        {
+          "t" : 12.62,
+          "w" : "der"
+        },
+        {
+          "t" : 12.9,
+          "w" : "Centerplan"
+        },
+        {
+          "t" : 13.8,
+          "w" : "ist"
+        },
+        {
+          "t" : 14.1,
+          "w" : "durch."
+        }
+      ]
+    },
+    {
+      "end" : 18.02,
+      "speaker" : "ME",
+      "start" : 15.4,
+      "text" : "Gut, dann kläre ich das bis Freitag.",
+      "tokens" : [
+        {
+          "t" : 15.4,
+          "w" : "Gut,"
+        },
+        {
+          "t" : 15.9,
+          "w" : "dann"
+        },
+        {
+          "t" : 16.2,
+          "w" : "kläre"
+        },
+        {
+          "t" : 16.6,
+          "w" : "ich"
+        },
+        {
+          "t" : 16.9,
+          "w" : "das"
+        },
+        {
+          "t" : 17.2,
+          "w" : "bis"
+        },
+        {
+          "t" : 17.5,
+          "w" : "Freitag."
+        }
+      ]
+    },
+    {
+      "end" : 21.44,
+      "speaker" : "S2",
+      "start" : 18.9,
+      "text" : "Dann können wir den Druck freigeben.",
+      "tokens" : [
+        {
+          "t" : 18.9,
+          "w" : "Dann"
+        },
+        {
+          "t" : 19.2,
+          "w" : "können"
+        },
+        {
+          "t" : 19.6,
+          "w" : "wir"
+        },
+        {
+          "t" : 19.9,
+          "w" : "den"
+        },
+        {
+          "t" : 20.2,
+          "w" : "Druck"
+        },
+        {
+          "t" : 20.7,
+          "w" : "freigeben."
+        }
+      ]
+    }
+  ]
+}

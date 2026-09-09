@@ -1,0 +1,48 @@
+{
+  "app" : "0.1.0",
+  "appBuild" : "1",
+  "audio" : "audio.m4a",
+  "channels" : [
+    "system",
+    "mic"
+  ],
+  "displays" : [
+    {
+      "id" : 1,
+      "index" : 0,
+      "px" : [
+        3840,
+        2160
+      ]
+    },
+    {
+      "id" : 2,
+      "index" : 1,
+      "px" : [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "duration" : 152,
+  "ended" : "2026-09-09T14:32:44+02:00",
+  "input" : {
+    "device" : "MacBook Pro Mikrofon"
+  },
+  "mode" : "online",
+  "models" : {
+    "asr" : "parakeet-tdt-0.6b-v3",
+    "diarizer" : "pyannote-community-1"
+  },
+  "os" : "26.6.0",
+  "screenshots" : 3,
+  "started" : "2026-09-09T14:30:12+02:00",
+  "state" : "done",
+  "stopReason" : "auto",
+  "title" : "Weekly Sync",
+  "trigger" : {
+    "bundleId" : "com.microsoft.teams2",
+    "kind" : "auto",
+    "name" : "Teams"
+  }
+}

@@ -75,7 +75,8 @@ struct OnboardingView: View {
                             detail: detail(for: permission),
                             action: { act(on: permission) },
                             actionTitle: actionTitle(for: permission),
-                            isActionEnabled: isActionEnabled(for: permission)
+                            isActionEnabled: isActionEnabled(for: permission),
+                            helpText: helpText(for: permission)
                         )
                     }
                 }
@@ -149,6 +150,8 @@ struct OnboardingView: View {
             guard !snapshot.screenRecording.isGranted else { return nil }
             return String(localized: "macOS gibt die Bildschirmaufnahme erst nach einem Neustart von Steno frei.")
         case .models:
+            // The one row that says more than "granted" or "missing": a download, a
+            // compile that takes minutes, and a warm-up all happen behind it.
             return environment.models.statusDescription
         case .microphone:
             guard snapshot.microphone == .denied else { return nil }
@@ -157,6 +160,13 @@ struct OnboardingView: View {
     }
 
     private func actionTitle(for permission: Permission) -> String {
+        // The models are not a permission, so "open System Settings" is the wrong
+        // answer for them in either direction: an installed set is shown in the Finder.
+        if permission == .models {
+            return snapshot.models.isGranted
+                ? String(localized: "Modellordner zeigen")
+                : String(localized: "Modelle laden")
+        }
         if snapshot[permission].isGranted {
             return String(localized: "Systemeinstellungen öffnen")
         }
@@ -181,10 +191,23 @@ struct OnboardingView: View {
         }
     }
 
+    private func helpText(for permission: Permission) -> String {
+        switch permission {
+        case .models:
+            return environment.models.downloadUnavailableReason
+        default:
+            return ""
+        }
+    }
+
     private func act(on permission: Permission) {
         switch permission {
         case .models:
-            Task { try? await environment.models.download() }
+            if snapshot.models.isGranted {
+                environment.models.revealModelsDirectory()
+            } else {
+                Task { try? await environment.models.download() }
+            }
         case .microphone, .systemAudio:
             if snapshot[permission].isGranted || snapshot[permission] == .denied {
                 permission.openSystemSettings()
@@ -209,6 +232,8 @@ private struct PermissionRow: View {
     let action: () -> Void
     let actionTitle: String
     let isActionEnabled: Bool
+    /// Why the button is disabled, or what it will do. Empty for the obvious cases.
+    var helpText: String = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -240,11 +265,7 @@ private struct PermissionRow: View {
 
             Button(actionTitle, action: action)
                 .disabled(!isActionEnabled)
-                .help(
-                    isActionEnabled
-                        ? ""
-                        : String(localized: "verfügbar ab der Transkription (M5)")
-                )
+                .help(helpText)
         }
     }
 }

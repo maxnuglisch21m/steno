@@ -36,8 +36,7 @@ downstream tool can line a screenshot up with what was being said.
 
 Steno writes nothing outside the recording root, with one documented exception:
 the ASR and diarization models are cached under
-`~/Library/Application Support/Steno/Models/` (or FluidAudio's own
-`~/.cache/fluidaudio/`, where its API does not accept a directory).
+`~/Library/Application Support/Steno/Models/`.
 
 The exact on-disk contract — folder naming, every `meta.json` key, the state
 lifecycle, `screens.jsonl`, and both transcript files — is in
@@ -335,10 +334,103 @@ is unlocked rather than filling a folder with two hundred pictures of the lock
 wallpaper.
 
 **Notifications.** A recording that fails posts one, with an "Im Finder zeigen"
-action; a finished transcript will, from M5. Permission for them is asked for in
+action; so does a finished transcript. Permission for them is asked for in
 exactly two places — the onboarding window's "Fertig" button and the Settings toggle
 — and never at launch. Before posting anything, Steno reads the authorization status
 and stays quiet unless it is granted.
+
+## Transcription
+
+When a recording stops, the folder moves to `state: transcribing` and goes into a
+serial queue — one meeting at a time, in the background, with the progress in the
+menu bar. Everything below runs **on this Mac**. Nothing is uploaded, and after the
+one-time model download nothing is downloaded either.
+
+```
+audio.wav  ──ChannelSplitter──►  _work/room16k.wav   ──Parakeet──►  words
+                                 _work/mic16k.wav    ──Parakeet──►  words   (online)
+                                 _work/room16k.wav   ──pyannote─►  who spoke when
+                                        │
+                                        └──TranscriptMerger──►  transcript.json
+                                                                transcript.md
+audio.wav  ──AudioTranscoder──►  audio.m4a                      meta.json: done
+```
+
+1. **Channels.** `audio.wav` is 48 kHz and one or two channels; the models want
+   16 kHz mono. `AVAudioFile` reads it a second at a time and `AVAudioConverter`
+   resamples each channel into its own work file under `_work/`, so an hour of audio
+   costs a few hundred kilobytes of buffers rather than 700 MB. `_work/` is deleted
+   when transcription succeeds and **kept when it fails**, because the inputs of a
+   failed run are the only thing that says why it failed.
+2. **Speech.** Parakeet TDT 0.6 B — v3 by default, which is multilingual and includes
+   German. Channel 0 always; channel 1 as a second, independent pass in `online` mode.
+   Long files are streamed from disk by FluidAudio itself.
+3. **Speakers.** pyannote community-1 plus VBx, on channel 0 in both modes. If the
+   `onsite` speaker-count picker was used, the answer is fed in as an upper and a
+   lower bound on the number of speakers.
+4. **Merge.** Every word gets the speaker of the diarization segment covering its
+   **midpoint**; a gap over 0.8 s starts a new utterance; microphone words override
+   diarization and become `ME`. This step is pure logic in `StenoCore` and has no
+   model in it — the rules and their tests are in `TranscriptMerger`.
+5. **Archive.** The WAV has done its job by now, so it is transcoded per the archive
+   setting and deleted — but only after the archive has been read back and found to
+   hold the same channels and the same length. A transcode that fails is not a failed
+   meeting: the WAV stays, `meta.audio` says `audio.wav`, and the transcript is
+   unaffected.
+
+| Archive format | Result | Roughly, per hour |
+|---|---|---|
+| **AAC** (default) | `audio.m4a`, 128 kbps for two channels, 64 kbps for one | 58 MB · 29 MB |
+| **FLAC** | `audio.flac`, lossless | ~350 MB · ~175 MB |
+| **WAV** | `audio.wav` kept as recorded | 660 MB · 330 MB |
+
+Compression never touches transcript quality, because transcription has already run
+on the lossless WAV by the time the archive is written. The channels are never mixed
+down: an `online` archive is still two channels in the same order, which is what makes
+`ME` meaningful.
+
+When it is finished, `meta.json` gets `models`, `audio`, and `state: done`, and a
+notification says so — if notifications are switched on and macOS has granted them.
+A failure writes `state: failed` with a reason, and the menu then offers **"Letztes
+Meeting erneut verarbeiten"**.
+
+### The models
+
+| | Repository | On disk |
+|---|---|---|
+| Speech | `FluidInference/parakeet-tdt-0.6b-v3-coreml` | ~474 MB |
+| Speakers | `FluidInference/speaker-diarization-coreml` (offline variant) | ~21 MB |
+
+They are downloaded once from Hugging Face — **the only network access Steno ever
+makes** — into `~/Library/Application Support/Steno/Models/`, either from the
+onboarding window's fourth row or from **Einstellungen → Transkription**. On this
+machine the download took about three minutes on a fast connection.
+
+**The first run compiles them.** Core ML builds a Neural Engine program for each model
+the first time it is loaded, and on a cold Mac that takes minutes with no network
+traffic and nothing to show. Steno therefore names that step ("Modelle werden
+kompiliert …") and warms the models once right after the download, so the first real
+meeting is not the thing that pays for it.
+
+Missing models never block a recording. Capture happens now; transcription happens
+afterwards and can wait for a download.
+
+### Limits worth knowing before you read a transcript
+
+The same list is in `docs/SPEC.md` §9 and in `docs/FORMAT.md`, because it belongs
+wherever the output is being read:
+
+- **Long-form seams.** Parakeet decodes in 15-second windows with 2 seconds of
+  overlap. Words are dropped or duplicated at the seams even with `seamGapRepair` on,
+  and a word that lands in a seam can end up in its own one-word utterance labelled
+  `UNKNOWN`.
+- **Speaker labels are suggestions.** Around 18–20 % diarization error rate on room
+  audio. That is why the raw diarizer segments are kept in `transcript.json`: a reader
+  can judge them instead of trusting a smoothed-over guess.
+- **`UNKNOWN` is honest.** A word no diarization segment covers is not guessed at.
+- **`ME` only exists in `online` mode**, where channel 1 physically is you.
+- **No language hint is passed.** v3 detects the language itself, and on a short
+  utterance after silence it can pick the wrong one.
 
 ## Settings
 
@@ -350,7 +442,7 @@ tab; the rest are the additions the plan accepted.
 | **Allgemein** | recording folder (with a picker and a reveal button) · start at login · notification when a transcript is finished · show the onboarding again · version |
 | **Aufnahme** | `onsite` input device (every `AVCaptureDevice`, refreshed on hot-plug) · auto-stop delay · ask for the speaker count · audio archive format (AAC / FLAC / WAV) · include the meeting title in the folder name |
 | **Screenshots** | minimum interval and change threshold, each for a normal display and for the display holding the pointer · maximum image edge · JPEG quality · anchor-frame interval |
-| **Transkription** | ASR version (Parakeet v3 / v2) · model status, download, and folder |
+| **Transkription** | ASR version (Parakeet v3 / v2) · model status with download progress · download button · reveal the model folder |
 | **Regeln** | watchlist of bundle IDs, validated on entry · rules table (app · title pattern · regex · never/ask/always · on/off) · read calendar titles, off by default |
 | **Updates** | check for updates automatically · check now |
 
@@ -456,6 +548,16 @@ open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 
 open build/Build/Products/Debug/Steno.app --args --open-settings
 open build/Build/Products/Debug/Steno.app --args --open-onboarding
+
+# Download, compile, and warm the models, then report where they landed and how
+# big they are. The one command in the app that touches the network.
+open build/Build/Products/Debug/Steno.app --args --download-models
+
+# Transcribe a folder that already has an audio.wav and a meta.json: the real
+# splitter, the real models, the real merge, the real meta.json. Prints the
+# resulting state and the first lines of transcript.md.
+open build/Build/Products/Debug/Steno.app --args \
+  --transcribe ~/Meetings/2026-09-09_1430_Vorort
 ```
 
 The results are written to stderr and to the unified log, so a run can be checked
@@ -464,6 +566,7 @@ without looking at the screen:
 ```sh
 log stream --predicate 'subsystem == "de.21m.steno" && category == "audio"'
 log stream --predicate 'subsystem == "de.21m.steno" && category == "screens"'
+log stream --predicate 'subsystem == "de.21m.steno" && category == "transcription"'
 ```
 
 They are compiled out of release builds: a shipped app has no business taking
@@ -551,6 +654,9 @@ These are properties of the approach, not bugs to be papered over:
 - **Per-speaker tracks from Teams do not exist.** A process tap sees only the
   finished mix; individual streams are available exclusively through Teams'
   cloud compliance-recording API.
+- **The recognizer is given no language hint.** Parakeet v3 works out the language
+  itself, and on a short utterance after silence it sometimes picks the wrong one and
+  transcribes German as English.
 
 ## Milestones
 
@@ -561,7 +667,7 @@ These are properties of the approach, not bugs to be papered over:
 | M2 | `online` audio: process tap + aggregate device, 2-channel WAV | **done** |
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | **done** |
 | M4 | Screenshots across all displays | **done** |
-| M5 | ASR + diarization + merge | planned |
+| M5 | ASR + diarization + merge | **done** |
 | M6 | Crash and interruption robustness | planned |
 | M7 | Release pipeline and in-app updates | planned |
 

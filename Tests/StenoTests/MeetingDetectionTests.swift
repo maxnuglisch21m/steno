@@ -323,7 +323,9 @@ struct MeetingDetectionTests {
         let meta = try MeetingMeta.decode(
             from: try Data(contentsOf: folder.appendingPathComponent("meta.json"))
         )
-        #expect(meta.state == .done)
+        // The auto-stop's job ends at the hand-over: `done` is the transcription
+        // queue's word, and this harness has none.
+        #expect(meta.state == .transcribing)
         #expect(meta.stopReason == .auto)
         #expect(meta.ended != nil)
     }
@@ -375,7 +377,7 @@ struct MeetingDetectionTests {
             )
         )
         #expect(meta.stopReason == .sleep)
-        #expect(meta.state == .done)
+        #expect(meta.state == .transcribing)
     }
 
     // MARK: - Window titles

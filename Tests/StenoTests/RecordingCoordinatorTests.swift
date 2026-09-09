@@ -10,6 +10,30 @@ import Testing
 @Suite("RecordingCoordinator", .serialized)
 @MainActor
 struct RecordingCoordinatorTests {
+    /// Stands in for the transcription queue.
+    ///
+    /// M5 moved the end of the recording flow: the coordinator no longer declares a
+    /// folder `done`, it hands one over that says `transcribing`. What is checked here
+    /// is that hand-over — the models, the splitter, and the merge have tests of their
+    /// own and have no business inside a recording test.
+    @MainActor
+    final class QueueSpy: TranscriptionEnqueuing {
+        private let appState: AppState
+        private(set) var enqueued: [URL] = []
+
+        init(appState: AppState) {
+            self.appState = appState
+        }
+
+        func enqueue(_ folder: URL) {
+            enqueued.append(folder)
+            // The real queue owns the phase from the hand-over onwards, and returns it
+            // to idle when the last folder is finished. This one has nothing to do, so
+            // it does that immediately.
+            appState.phase = .idle
+        }
+    }
+
     /// One coordinator, its state, and a throwaway recording root.
     private struct Harness {
         let root: URL
@@ -17,6 +41,7 @@ struct RecordingCoordinatorTests {
         let settings: SettingsStore
         let store: RecordingStore
         let coordinator: RecordingCoordinator
+        let queue: QueueSpy
         let suiteName: String
 
         func tearDown() {
@@ -48,12 +73,15 @@ struct RecordingCoordinatorTests {
             store: store,
             recorder: NullRecorder()
         )
+        let queue = QueueSpy(appState: appState)
+        coordinator.transcription = queue
         return Harness(
             root: root,
             appState: appState,
             settings: settings,
             store: store,
             coordinator: coordinator,
+            queue: queue,
             suiteName: suiteName
         )
     }
@@ -75,7 +103,7 @@ struct RecordingCoordinatorTests {
     // MARK: - The flow
 
     @Test(
-        "a recording produces a folder whose meta.json ends done with the mode's channels",
+        "a recording produces a folder handed to transcription with the mode's channels",
         arguments: [MeetingMode.onsite, MeetingMode.online]
     )
     func recordsThroughToDone(mode: MeetingMode) async throws {
@@ -103,7 +131,13 @@ struct RecordingCoordinatorTests {
         }
 
         let meta = try Self.readMeta(in: folder)
-        #expect(meta.state == .done)
+        // `transcribing`, not `done`: the transcript is what makes a meeting done, and
+        // the queue is what writes it. A folder that said `done` here would be lying
+        // about a transcript that does not exist.
+        #expect(meta.state == .transcribing)
+        // Compared standardized: the temporary root is under `/var`, which is a symlink
+        // to `/private/var`, and the two spellings are the same folder.
+        #expect(harness.queue.enqueued.map(\.standardizedFileURL) == [folder.standardizedFileURL])
         #expect(meta.mode == mode)
         #expect(meta.channels == mode.channels)
         #expect(meta.trigger.kind == .manual)
@@ -189,8 +223,30 @@ struct RecordingCoordinatorTests {
         }
         let folder = try #require(harness.appState.lastMeetingURL)
         let meta = try Self.readMeta(in: folder)
-        #expect(meta.state == .done)
+        #expect(meta.state == .transcribing)
         #expect(meta.ended != nil)
+    }
+
+    @Test("a recording with nowhere to hand the folder still finishes cleanly")
+    func withoutATranscriptionQueue() async throws {
+        let harness = Self.makeHarness()
+        defer { harness.tearDown() }
+        // The queue is a dependency, not a requirement: a build without one — the
+        // tests, and every path that runs before the models exist — must still end the
+        // recording, close the file, and go back to idle rather than hanging in
+        // `processing` for ever.
+        harness.coordinator.transcription = nil
+
+        harness.coordinator.startOnsite()
+        try await Self.waitUntil("the recording to start") { harness.appState.phase.isRecording }
+        harness.coordinator.stop()
+        try await Self.waitUntil("it to finish") {
+            harness.appState.lastMeetingURL != nil && harness.appState.phase == .idle
+        }
+
+        let folder = try #require(harness.appState.lastMeetingURL)
+        #expect(try Self.readMeta(in: folder).state == .transcribing)
+        #expect(harness.queue.enqueued.isEmpty)
     }
 
     @Test("stopping when nothing runs does nothing")

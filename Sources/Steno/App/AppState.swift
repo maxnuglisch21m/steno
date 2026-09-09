@@ -55,6 +55,17 @@ final class AppState {
     /// The newest finished meeting, for "Letztes Meeting im Finder zeigen".
     var lastMeetingURL: URL?
 
+    /// What that meeting's `meta.json` says.
+    ///
+    /// The menu needs it for one item: "Letztes Meeting erneut verarbeiten" only makes
+    /// sense — and is only offered — while the newest meeting reads `failed`.
+    var lastMeetingState: MeetingState?
+
+    /// Whether the newest meeting can be handed to the transcription queue again.
+    var canReprocessLastMeeting: Bool {
+        lastMeetingURL != nil && lastMeetingState == .failed
+    }
+
     /// Display name of the app being recorded, for the status line: "Aufnahme läuft ·
     /// Teams · 12:34". `nil` for `onsite` and for an `online` recording with a
     /// system-wide tap, where the mode's own name is all there is to say.

@@ -173,7 +173,9 @@ struct RecorderTimeoutTests {
         try await Self.waitUntil("the recording to finish") { harness.appState.phase == .idle }
 
         let folder = try #require(harness.store.meetingFolders(in: harness.root).first)
-        #expect(try Self.readMeta(in: folder).state == .done)
+        // `transcribing`: the recording is complete and has been handed over. `done` is
+        // the transcription queue's word, and this harness has none.
+        #expect(try Self.readMeta(in: folder).state == .transcribing)
     }
 
     // MARK: - Stopping

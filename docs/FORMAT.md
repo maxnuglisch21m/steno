@@ -16,6 +16,11 @@ format:
 | `transcript.json` | `Transcript`, `Utterance`, `Token`, `DiarSegment`, `ModelIdentifiers` |
 | `transcript.md` | `TranscriptMarkdownFormatter` |
 
+A complete, small example folder is checked in at
+[`docs/format-fixtures/`](format-fixtures/) and is decoded, re-encoded, and compared
+byte for byte by `FormatFixtureTests` in `StenoCore`. If this document and the fixture
+disagree, the fixture is right.
+
 **A sibling application on another platform has to satisfy exactly this format** —
 same folder naming, same keys, same state lifecycle — so that the downstream tooling
 does not need to know which machine a meeting was recorded on. Where this document
@@ -26,9 +31,10 @@ and the Swift types disagree, the types are right and this document is a bug.
 ## Folder layout
 
 One folder per meeting, inside the recording root (`~/Meetings` by default). Steno
-writes nothing outside that root, with one documented exception: the ASR and
-diarization models are cached under
-`~/Library/Application Support/Steno/Models`.
+writes nothing outside that root, with two documented exceptions, both of which are
+app state rather than meeting data: the ASR and diarization models are cached under
+`~/Library/Application Support/Steno/Models`, and the settings and the list of
+folders still waiting for transcription are in `UserDefaults` under `de.21m.steno`.
 
 ```
 <root>/2026-09-09_1430_Teams/            # online mode
@@ -48,9 +54,26 @@ Everything else appears as it is produced: `screens.jsonl` and the images grow d
 the recording, the two transcript files are written when transcription finishes, and
 the audio file is renamed by the archive transcode at the very end.
 
-A folder may also hold `_work/`, which is scratch space for the 16 kHz mono channel
-files transcription runs on. It is deleted when transcription finishes. Treat any
-`_work/` you find as debris from an interrupted run and ignore it.
+### `_work/`
+
+A folder may also hold `_work/`, which is scratch space for transcription:
+
+```
+_work/
+  room16k.wav      # channel 0 at 16 kHz mono Float32 — the room / the meeting
+  mic16k.wav       # channel 1, online mode only — the microphone
+```
+
+Both are produced from `audio.wav` with `AVAudioFile` and `AVAudioConverter`; they
+exist because the models take one mono file at a time and the two channels of an
+`online` recording mean different things.
+
+`_work/` is **deleted when transcription succeeds** and **kept when it fails**, because
+the inputs of a failed run are the only thing that says why it failed. So a `_work/`
+next to a `state: done` folder is debris from an interrupted run and can be deleted; a
+`_work/` next to a `state: failed` folder is diagnostic material. Either way, nothing
+downstream should read it: it is derived from `audio.*`, which is the file the format
+guarantees.
 
 ### Folder naming
 
@@ -116,7 +139,7 @@ working when they are absent.
 | `audio` | string | File name of the audio archive: `audio.m4a`, `audio.flac`, or `audio.wav`. Absent when no audio file was written. |
 | `appBuild` | string | Steno's build number. |
 | `os` | string | The macOS version the recording was made on, e.g. `26.6.0`. |
-| `models` | object | `{"asr": string, "diarizer": string}`. Written when transcription finishes. |
+| `models` | object | `{"asr": string, "diarizer": string}`. Written when transcription finishes; identical to `transcript.json`'s `models`. See below. |
 | `error` | string | Why the recording ended in `failed`. Written together with that state. |
 | `speakers` | object | `{"expected": integer}` — how many people the user said were in the room. `onsite` only, and only when asked. See below. |
 | `stopReason` | string | What ended the capture: `manual`, `auto`, `sleep`, or `deviceLost`. See below. |
@@ -218,6 +241,25 @@ in the folder name" setting is on.
 `online` recordings are not gated on the mode: there the microphone channel is the
 user's own voice, and isolating it does no harm.
 
+### `models`
+
+```json
+"models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "pyannote-community-1"}
+```
+
+| Key | Values | Meaning |
+|---|---|---|
+| `asr` | `parakeet-tdt-0.6b-v3` \| `parakeet-tdt-0.6b-v2` | The Parakeet checkpoint the words came from. `v3` is multilingual and the default; `v2` is the older English-first one and is a setting. |
+| `diarizer` | `pyannote-community-1` | The model the speaker segments came from. |
+
+Written only when transcription has run, so it is present exactly when
+`transcript.json` is. The same object appears in both files and must agree; a reader
+that finds them disagreeing should trust `transcript.json`, which is written first.
+
+The `diarizer` value names the **model**, not the repository it ships in: the four
+Core ML bundles live in a Hugging Face repository FluidAudio calls
+`speaker-diarization`, and what is in them is pyannote community-1.
+
 ### `speakers`
 
 ```json
@@ -289,7 +331,7 @@ The state is written continuously so that a crash is detectable. On the next lau
   "ended": "2026-09-09T15:12:44+02:00",
   "input": {"device": "MacBook Pro Mikrofon"},
   "mode": "online",
-  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "speaker-diarization"},
+  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "pyannote-community-1"},
   "os": "26.6.0",
   "screenshots": 214,
   "started": "2026-09-09T14:30:12+02:00",
@@ -313,7 +355,7 @@ The state is written continuously so that a crash is detectable. On the next lau
   "ended": "2026-09-09T15:00:12+02:00",
   "input": {"device": "Tisch-Grenzflächenmikrofon", "microphoneMode": "wideSpectrum"},
   "mode": "onsite",
-  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "speaker-diarization"},
+  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "pyannote-community-1"},
   "os": "26.6.0",
   "screenshots": 31,
   "speakers": {"expected": 4},
@@ -338,9 +380,28 @@ Recording is always lossless WAV, streamed to disk:
 WAV rather than a compressed container because a container cannot be recovered after
 a crash and a WAV can: the RIFF and `data` sizes are repairable from the file length
 alone. Transcription runs on this file. Only afterwards is it transcoded per the
-archive setting — AAC-LC `audio.m4a` by default, FLAC, or the WAV kept as it is — and
-`meta.audio` names the result. Transcript quality therefore never depends on the
-archive format.
+archive setting and `meta.audio` names the result:
+
+| `meta.audio` | Format | Roughly, per hour (2 ch · 1 ch) |
+|---|---|---|
+| `audio.m4a` | AAC-LC, 128 kbps for two channels, 64 kbps for one. The default. | 58 MB · 29 MB |
+| `audio.flac` | FLAC, lossless | ~350 MB · ~175 MB |
+| `audio.wav` | the recording, kept | 660 MB · 330 MB |
+
+`audio.m4a` may also hold **ALAC** rather than AAC: it is what the FLAC setting falls
+back to where the FLAC encoder refuses a channel layout. A reader should take the
+codec from the file, not from the extension.
+
+Two rules hold for every one of them:
+
+- **The channel count and order never change.** An `online` archive is two channels,
+  ch0 then ch1, exactly as `meta.channels` says. Nothing is ever downmixed.
+- **`meta.audio` names a file that exists.** The WAV is deleted only after the archive
+  has been read back and found to hold the same channels and the same length; a
+  transcode that fails leaves the WAV and says `audio.wav`. So a meeting whose
+  transcode failed is still `done` — the transcript is what the meeting was for.
+
+Transcript quality therefore never depends on the archive format.
 
 No processing is applied on the way in: no AGC, no noise gate, no normalization. The
 raw signal goes to the models, because every kind of sharpening makes diarization
@@ -426,14 +487,18 @@ should skip a line it cannot parse rather than rejecting the file.
 
 ## `transcript.json`
 
-The machine-readable truth. Pretty-printed with sorted keys.
+The machine-readable truth. Pretty-printed with sorted keys. **Every time carries at
+most two decimals** — the same centiseconds `screens.jsonl` uses, which is what lets a
+reader line a screenshot up against a transcript line. The models report finer than
+that and the extra digits are binary noise, so they are rounded away just before
+writing; the merge itself runs on full precision.
 
 ```json
 {
   "confidence": {"asr_mic": null, "asr_room": 0.89},
   "diarization": [{"end": 22.1, "speaker": "S1", "start": 15.4}],
   "mode": "onsite",
-  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "speaker-diarization"},
+  "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "pyannote-community-1"},
   "utterances": [
     {
       "end": 15.02,
@@ -456,7 +521,26 @@ The machine-readable truth. Pretty-printed with sorted keys.
 | `utterances[].tokens` | array | `{"t": start in seconds, "w": word}`. |
 | `diarization` | array | The diarizer's raw segments, `{"speaker","start","end"}`, before any merging. |
 | `models` | object | `{"asr","diarizer"}`. |
-| `confidence` | object | `{"asr_room","asr_mic"}`, mean per-token ASR confidence per source. Always both keys; a source that did not exist is an explicit `null`. |
+| `confidence` | object | `{"asr_room","asr_mic"}`. Always both keys; a source that did not exist is an explicit `null`. See below. |
+
+### `confidence`
+
+```json
+"confidence": {"asr_mic": null, "asr_room": 0.89}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `asr_room` | number \| null | The recognizer's own confidence in the channel-0 pass, 0…1. `null` when nothing was recognized. |
+| `asr_mic` | number \| null | The same for the channel-1 pass. **Always `null` in `onsite` mode**, which has no microphone channel — an explicit `null` rather than an absent key, so a reader can tell "there was no such source" from "nobody recorded it". |
+
+Both are the recognizer's per-pass number, not an average over the words. There is no
+confidence per utterance and none per word in the file: a per-word number would invite
+a reader to filter on it, and the errors that matter in a meeting transcript — a wrong
+speaker, a word lost in a seam — are not the ones the recognizer is unsure about.
+
+It says nothing about diarization. The diarizer reports no confidence, which is
+exactly why its raw segments are in the file.
 
 ### How speakers are assigned
 
@@ -497,7 +581,7 @@ whatever language the meeting was held in.
 - Duration: 00:42:32
 - Speakers: S1, S2, S3
 - ASR model: parakeet-tdt-0.6b-v3
-- Diarization model: speaker-diarization
+- Diarization model: pyannote-community-1
 - Confidence (room): 0.89
 
 [00:00:12] S1: Also der Centerplan ist durch.
@@ -520,7 +604,13 @@ These are properties of the approach, not defects to be papered over. A tool rea
 these files should assume them.
 
 - **Long-form seams.** Parakeet decodes in 15 s windows with 2 s overlap; words can be
-  dropped or duplicated at the seams even with seam-gap repair on.
+  dropped or duplicated at the seams even with seam-gap repair on. A word that lands in
+  a seam can also end up alone in a one-word utterance labelled `UNKNOWN`, because its
+  timing drifted out of every diarization segment.
+- **The recognizer is given no language hint.** Parakeet v3 detects the language
+  itself, and on a short utterance after silence it can pick the wrong one — a German
+  sentence transcribed as English is a thing that happens, and it is visible in the
+  text rather than in the confidence.
 - **Speaker labels are suggestions.** Roughly 18–20 % diarization error rate on room
   audio, and room audio is what `onsite` is.
 - **`ME` exists only in `online` mode.** That is the price of a single microphone

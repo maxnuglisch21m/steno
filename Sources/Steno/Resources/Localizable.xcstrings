@@ -13,6 +13,54 @@
         }
       }
     },
+    "%@ %d %%": {
+      "comment": "Model status line with a percentage, e.g. 'Sprachmodell wird geladen … 42 %'.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %d %%"
+          }
+        }
+      }
+    },
+    "%@ (noch %d)": {
+      "comment": "Transcription step label with the number of meetings still queued behind it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%d more)"
+          }
+        }
+      }
+    },
+    "%@ wird kompiliert … (beim ersten Mal Minuten)": {
+      "comment": "Model status: Core ML is compiling one named model for this Mac.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compiling %@ … (minutes, the first time)"
+          }
+        }
+      }
+    },
+    "%@ · %d min": {
+      "comment": "Notification body: the meeting folder and its length in minutes.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %d min"
+          }
+        }
+      }
+    },
     "%@-Meeting läuft. Aufnehmen?": {
       "comment": "Suggestion panel headline when the meeting has no known title. %@ is the app name, e.g. Teams.",
       "extractionState": "manual",
@@ -117,6 +165,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anchor frame interval"
+          }
+        }
+      }
+    },
+    "Archiv": {
+      "comment": "Transcription step 4 of 4: transcoding the audio archive.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive"
           }
         }
       }
@@ -397,6 +457,18 @@
         }
       }
     },
+    "Das Audio-Archiv ließ sich nicht schreiben: %@": {
+      "comment": "Error when the audio transcode failed. The recording is kept as WAV.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio archive could not be written: %@"
+          }
+        }
+      }
+    },
     "Das Audiosystem antwortet nicht. Bitte den Mac neu starten oder `sudo killall coreaudiod` ausführen.": {
       "comment": "Shown when a recorder does not answer within 15 seconds, i.e. the audio daemon is wedged.",
       "extractionState": "manual",
@@ -505,6 +577,18 @@
         }
       }
     },
+    "Der Download läuft bereits.": {
+      "comment": "Help text on the disabled model download button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The download is already running."
+          }
+        }
+      }
+    },
     "Der Mac ist eingeschlafen. Die Aufnahme wurde beendet.": {
       "comment": "Menu notice when sleep ended a recording.",
       "extractionState": "manual",
@@ -529,14 +613,14 @@
         }
       }
     },
-    "Der Modell-Download kommt mit der Transkription (M5).": {
-      "comment": "Error thrown by the not-yet-implemented download.",
+    "Der Modell-Download läuft bereits.": {
+      "comment": "Error when a second model download is started while one runs.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The model download arrives with transcription (M5)."
+            "value": "The model download is already running."
           }
         }
       }
@@ -565,6 +649,42 @@
         }
       }
     },
+    "Die Audiodatei des Meetings fehlt.": {
+      "comment": "Transcription error: audio.wav is not in the meeting folder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The meeting's audio file is missing."
+          }
+        }
+      }
+    },
+    "Die Audiodatei enthält keine Aufnahme.": {
+      "comment": "Transcription error: the WAV has a header but no samples.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio file contains no recording."
+          }
+        }
+      }
+    },
+    "Die Audiodatei ließ sich nicht auf 16 kHz umrechnen.": {
+      "comment": "Transcription error: resampling to the models' sample rate failed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio file could not be resampled to 16 kHz."
+          }
+        }
+      }
+    },
     "Die Audiodatei ließ sich nicht schreiben: %@": {
       "comment": "Shown when writing audio.wav failed, a full volume being the usual cause. %@ is the technical detail.",
       "extractionState": "manual",
@@ -573,6 +693,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "The audio file could not be written: %@"
+          }
+        }
+      }
+    },
+    "Die Aufnahme ist mit %.1f s zu kurz für die Spracherkennung.": {
+      "comment": "Transcription error: the recognizer needs at least 300 ms of audio.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At %.1f s the recording is too short for speech recognition."
           }
         }
       }
@@ -601,6 +733,18 @@
         }
       }
     },
+    "Die Sprachmodelle sind nicht geladen.": {
+      "comment": "Transcription error: speech recognition was used before its models were loaded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The speech models are not loaded."
+          }
+        }
+      }
+    },
     "Die Sprechertrennung findet die Zahl selbst. Wenn du sie kennst, wird sie zuverlässiger.": {
       "comment": "Body of the speaker-count dialog.",
       "extractionState": "manual",
@@ -609,6 +753,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Speaker separation finds the number by itself. If you know it, it gets more reliable."
+          }
+        }
+      }
+    },
+    "Die Sprechertrennung ist nicht geladen.": {
+      "comment": "Transcription error: diarization was used before its models were loaded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaker separation is not loaded."
+          }
+        }
+      }
+    },
+    "Die Verarbeitung ist dreimal fehlgeschlagen und wurde aufgegeben.": {
+      "comment": "Transcription error after the third failed attempt on one folder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing failed three times and was given up on."
+          }
+        }
+      }
+    },
+    "Die meta.json des Meetings ist unlesbar.": {
+      "comment": "Transcription error: the folder's meta.json could not be decoded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The meeting's meta.json cannot be read."
+          }
+        }
+      }
+    },
+    "Dieses Meeting ist nicht zur Verarbeitung vorgemerkt.": {
+      "comment": "Refusal when a finished or still-recording meeting is handed to the transcription queue.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This meeting is not queued for processing."
           }
         }
       }
@@ -829,6 +1021,18 @@
         }
       }
     },
+    "Kanäle": {
+      "comment": "Transcription step 1 of 4: splitting audio.wav into one file per channel.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channels"
+          }
+        }
+      }
+    },
     "Keine Regeln. Ohne Regel fragt Steno bei jedem erkannten Meeting.": {
       "comment": "Empty state of the rules list.",
       "extractionState": "manual",
@@ -841,6 +1045,30 @@
         }
       }
     },
+    "Keine Verbindung zu Hugging Face. Der Download ist die einzige Netzverbindung, die Steno braucht.": {
+      "comment": "Model download error when the machine is offline.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connection to Hugging Face. The download is the only network access Steno needs."
+          }
+        }
+      }
+    },
+    "Letztes Meeting erneut verarbeiten": {
+      "comment": "Menu item, shown only while the newest meeting is in the failed state.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Process the last meeting again"
+          }
+        }
+      }
+    },
     "Letztes Meeting im Finder zeigen": {
       "comment": "Menu item.",
       "extractionState": "manual",
@@ -849,6 +1077,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show last meeting in Finder"
+          }
+        }
+      }
+    },
+    "Lädt die Modelle einmalig von Hugging Face (rund 500 MB).": {
+      "comment": "Help text on the model download button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads the models from Hugging Face once (around 500 MB)."
           }
         }
       }
@@ -973,14 +1213,14 @@
         }
       }
     },
-    "Modelle fehlen": {
-      "comment": "Model status.",
+    "Modelle fehlen — rund 500 MB, einmalig": {
+      "comment": "Model status when nothing is installed yet.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Models missing"
+            "value": "Models missing — around 500 MB, once"
           }
         }
       }
@@ -993,6 +1233,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Models installed"
+          }
+        }
+      }
+    },
+    "Modelle installiert und bereit": {
+      "comment": "Model status when the models are installed and have been warmed up.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models installed and ready"
           }
         }
       }
@@ -1021,26 +1273,26 @@
         }
       }
     },
-    "Modelle werden geladen …": {
-      "comment": "Model status without a known progress share.",
+    "Modelle werden aufgewärmt …": {
+      "comment": "Model status: one prediction is run through every model so the first meeting does not pay for it.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloading models…"
+            "value": "Warming up the models …"
           }
         }
       }
     },
-    "Modelle werden geladen … %d %%": {
-      "comment": "Model status with progress.",
+    "Modelle werden kompiliert … (beim ersten Mal Minuten)": {
+      "comment": "Model status: Core ML is compiling the models for this Mac.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloading models… %d %%"
+            "value": "Compiling the models … (minutes, the first time)"
           }
         }
       }
@@ -1393,6 +1645,30 @@
         }
       }
     },
+    "Sprache": {
+      "comment": "Transcription step 2 of 4: speech recognition.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech"
+          }
+        }
+      }
+    },
+    "Spracherkennung und Sprechertrennung laufen offline auf diesem Mac. Der einmalige Download ist die einzige Netzverbindung, die Steno je aufbaut. Beim ersten Mal kompiliert macOS die Modelle für die Neural Engine — das kann einige Minuten dauern.": {
+      "comment": "Footnote under the model section in Settings → Transkription.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition and speaker separation run offline on this Mac. The one-time download is the only network connection Steno ever makes. The first time, macOS compiles the models for the Neural Engine, which can take several minutes."
+          }
+        }
+      }
+    },
     "Spracherkennung und Sprechertrennung laufen offline auf diesem Mac. Die Modelle werden einmal geladen.": {
       "comment": "One-sentence explanation of the models row.",
       "extractionState": "manual",
@@ -1405,14 +1681,14 @@
         }
       }
     },
-    "Spracherkennung und Sprechertrennung laufen offline. Der Download ist die einzige Netzverbindung, die Steno je aufbaut.": {
-      "comment": "Explains the transcription settings.",
+    "Spracherkennung und Sprechertrennung noch einmal starten.": {
+      "comment": "Help text on the reprocess menu item.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Speech recognition and speaker separation run offline. The download is the only network connection Steno ever makes."
+            "value": "Run speech recognition and speaker separation again."
           }
         }
       }
@@ -1449,6 +1725,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Voice Isolation damps the other participants. A room recording needs the microphone mode “Wide Spectrum” or “Standard”."
+          }
+        }
+      }
+    },
+    "Sprachmodell wird geladen …": {
+      "comment": "Model status: the Parakeet checkpoint is being downloaded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading the speech model …"
+          }
+        }
+      }
+    },
+    "Sprecher": {
+      "comment": "Transcription step 3 of 4: speaker separation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speakers"
+          }
+        }
+      }
+    },
+    "Sprechertrennung wird geladen …": {
+      "comment": "Model status: the diarization models are being downloaded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading speaker separation …"
           }
         }
       }
@@ -1657,6 +1969,18 @@
         }
       }
     },
+    "Transkript fertig": {
+      "comment": "Notification title when a transcript has been written.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcript finished"
+          }
+        }
+      }
+    },
     "Transkription": {
       "comment": "Settings tab.",
       "extractionState": "manual",
@@ -1665,6 +1989,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcription"
+          }
+        }
+      }
+    },
+    "Transkription %d/%d · %@": {
+      "comment": "Menu-bar label while transcribing: step number, step count, step name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription %1$d/%2$d · %3$@"
+          }
+        }
+      }
+    },
+    "Transkription fehlgeschlagen": {
+      "comment": "Notification title when transcription failed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription failed"
           }
         }
       }
@@ -1813,6 +2161,18 @@
         }
       }
     },
+    "Zu diesem Meeting gibt es keine Audiodatei.": {
+      "comment": "Transcription error: the folder holds no audio.wav.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This meeting has no audio file."
+          }
+        }
+      }
+    },
     "Zu wenig Speicherplatz: nur noch %@ frei.": {
       "comment": "Why a recording cannot start; %@ is a formatted byte count.",
       "extractionState": "manual",
@@ -1917,18 +2277,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "v3 is multilingual, German included. v2 is older and faster."
-          }
-        }
-      }
-    },
-    "verfügbar ab der Transkription (M5)": {
-      "comment": "Help text of a button that is disabled until M5.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "available from transcription onwards (M5)"
           }
         }
       }

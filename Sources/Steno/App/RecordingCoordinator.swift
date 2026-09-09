@@ -83,6 +83,13 @@ final class RecordingCoordinator {
     private let store: RecordingStore
     private(set) var recorderFactory: any RecorderFactory
 
+    /// Where a finished folder goes. Set by `AppEnvironment` at launch.
+    ///
+    /// Weak and optional so that the recording flow can be built and tested without a
+    /// transcription queue, models, or a two-gigabyte checkpoint on disk — and so that
+    /// the coordinator never becomes the thing that owns the queue.
+    weak var transcription: (any TranscriptionEnqueuing)?
+
     /// Set while the hardware is being opened, so a second hotkey press during the
     /// handshake does not open a second recording.
     private var isStarting = false
@@ -379,7 +386,7 @@ final class RecordingCoordinator {
             appBuild: AppVersion.build,
             os: AppVersion.osVersion,
             // Written from the first second, so a recording interrupted before it
-            // finished still carries the number the user gave into M5's diarizer.
+            // finished still carries the number the user gave into the diarizer.
             speakers: expectedSpeakers.map { SpeakerHint(expected: $0) }
         )
 
@@ -639,6 +646,7 @@ final class RecordingCoordinator {
         appState.phase = .processing(progress: nil, label: String(localized: "Verarbeitung"))
 
         let reason = pendingStopReason
+        var handedOver = false
         do {
             try session.update { meta in
                 meta.finishCapture(at: ended, reason: reason)
@@ -648,10 +656,11 @@ final class RecordingCoordinator {
                     meta.audio = outcome.audioFileName
                 }
             }
-            // recording → transcribing: what M5 will actually spend time in.
+            // recording → transcribing. The queue takes it from here and is what moves
+            // it to `done`; a folder that says `transcribing` after a crash is exactly
+            // what the next launch looks for.
             try session.transition(to: .transcribing)
-            // transcribing → done: immediate until M5 puts a transcript in between.
-            try session.transition(to: .done)
+            handedOver = true
         } catch {
             Log.storage.error("could not finish meta.json: \(error.localizedDescription, privacy: .public)")
             session.fail(reason: error.localizedDescription)
@@ -659,7 +668,7 @@ final class RecordingCoordinator {
         }
 
         appState.lastMeetingURL = session.folder
-        appState.phase = .idle
+        appState.lastMeetingState = session.meta.state
         Log.app.notice(
             """
             recording finished: \(session.folder.lastPathComponent, privacy: .public) \
@@ -668,6 +677,14 @@ final class RecordingCoordinator {
             """
         )
         recordingDidEnd()
+
+        if handedOver, let transcription {
+            // The queue owns the phase from here: it is what knows which step is
+            // running and when the last folder is finished.
+            transcription.enqueue(session.folder)
+        } else {
+            appState.phase = .idle
+        }
     }
 
     /// Clears what belonged to the recording that just ended and tells detection.
@@ -705,6 +722,7 @@ final class RecordingCoordinator {
         let reason = RecorderTimeout.stop.localizedDescription
         session.fail(reason: reason)
         appState.lastMeetingURL = session.folder
+        appState.lastMeetingState = session.meta.state
         appState.notice = reason
         appState.phase = .idle
         notifyFailure(reason: reason, folder: session.folder)
@@ -814,6 +832,7 @@ final class RecordingCoordinator {
         session.fail(reason: reason.localizedReason)
 
         appState.lastMeetingURL = session.folder
+        appState.lastMeetingState = session.meta.state
         appState.notice = reason.localizedReason
         appState.phase = .idle
         notifyFailure(reason: reason.localizedReason, folder: session.folder)
@@ -824,11 +843,10 @@ final class RecordingCoordinator {
 
     /// Tells the user that a recording ended badly.
     ///
-    /// The plan's addition to specification §5, and the half of it that exists now:
-    /// a failure is worth a banner because the recording is gone and the meeting is
-    /// still running, so the user can start it again. The `done` notification arrives
-    /// with transcription in M5. Silent unless the user has both switched
-    /// notifications on and granted them.
+    /// The plan's addition to specification §5: a failure is worth a banner because
+    /// the recording is gone and the meeting is still running, so the user can start
+    /// it again. The `done` notification is the transcription queue's. Silent unless
+    /// the user has both switched notifications on and granted them.
     private func notifyFailure(reason: String, folder: URL?) {
         let isEnabled = settings.settings.notificationsEnabled
         Task {

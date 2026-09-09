@@ -19,6 +19,8 @@ final class AppEnvironment {
     let appState: AppState
     let store: RecordingStore
     let models: ModelManager
+    /// Specification §5, serialized: one meeting transcribed at a time.
+    let transcription: TranscriptionQueue
     let permissions: PermissionMonitor
     let inputDevices: AudioInputDeviceList
     let coordinator: RecordingCoordinator
@@ -58,6 +60,17 @@ final class AppEnvironment {
             recorderFactory: self.recorderFactory
         )
         self.coordinator = coordinator
+
+        let transcription = TranscriptionQueue(
+            appState: appState,
+            settings: settings,
+            models: self.models,
+            store: TranscriptionQueueStore(defaults: settings.defaults)
+        )
+        self.transcription = transcription
+        // A finished recording is handed over rather than declared done: the queue is
+        // what writes the transcript and moves `meta.json` to `done`.
+        coordinator.transcription = transcription
         self.hotKeys = HotKeys()
 
         let detector = MeetingDetector(settings: settings)
@@ -95,7 +108,11 @@ final class AppEnvironment {
         models.asrVersion = settings.settings.asrVersion
 
         _ = store.ensureRootExists(settings.rootFolderURL)
-        appState.lastMeetingURL = store.lastMeetingURL(in: settings.rootFolderURL)
+        refreshLastMeeting()
+
+        // Whatever the last launch did not finish. The full recovery scan of the
+        // recording root is M6; this is the half the queue already knows about.
+        transcription.resumePersisted()
 
         permissions.observeActivation()
         inputDevices.startObserving()
@@ -139,6 +156,7 @@ final class AppEnvironment {
         // First, because a process tap left open in `coreaudiod` wedges the next
         // recording — and every one after it.
         coordinator.prepareForTermination()
+        transcription.prepareForTermination()
         detectionController.stop()
         sleepLock?.stop()
         sleepLock = nil
@@ -177,12 +195,14 @@ final class AppEnvironment {
     func changeRootFolder(to url: URL) {
         settings.setRootFolder(url)
         _ = store.ensureRootExists(url)
-        appState.lastMeetingURL = store.lastMeetingURL(in: url)
+        refreshLastMeeting()
     }
 
     /// Re-reads which meeting is the newest. Called after a recording finishes and
     /// when the menu opens, because the user may have moved folders around.
     func refreshLastMeeting() {
-        appState.lastMeetingURL = store.lastMeetingURL(in: settings.rootFolderURL)
+        let folder = store.lastMeetingURL(in: settings.rootFolderURL)
+        appState.lastMeetingURL = folder
+        appState.lastMeetingState = folder.flatMap(store.state(of:))
     }
 }

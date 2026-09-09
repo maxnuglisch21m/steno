@@ -473,6 +473,14 @@ private struct TranscriptionSettingsTab: View {
                     }
                 }
 
+                if case .preparing(_, let fraction) = environment.models.state {
+                    ProgressView(value: fraction ?? 0, total: 1)
+                        .progressViewStyle(.linear)
+                        // Indeterminate until the download knows its total size, which
+                        // is after the file listing comes back.
+                        .opacity(fraction == nil ? 0.4 : 1)
+                }
+
                 HStack {
                     Button(String(localized: "Modelle laden")) {
                         Task { try? await environment.models.download() }
@@ -493,7 +501,7 @@ private struct TranscriptionSettingsTab: View {
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
-                Text(String(localized: "Spracherkennung und Sprechertrennung laufen offline. Der Download ist die einzige Netzverbindung, die Steno je aufbaut."))
+                Text(String(localized: "Spracherkennung und Sprechertrennung laufen offline auf diesem Mac. Der einmalige Download ist die einzige Netzverbindung, die Steno je aufbaut. Beim ersten Mal kompiliert macOS die Modelle für die Neural Engine — das kann einige Minuten dauern."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

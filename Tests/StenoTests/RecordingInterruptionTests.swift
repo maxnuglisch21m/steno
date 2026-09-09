@@ -212,7 +212,7 @@ struct RecordingInterruptionTests {
         #expect(await harness.recorder.stopCount == 1)
     }
 
-    @Test("an ordinary stop still reaches done and names the audio")
+    @Test("an ordinary stop reaches transcribing and names the audio")
     func ordinaryStopIsUnaffected() async throws {
         let harness = Self.makeHarness()
         defer { harness.tearDown() }
@@ -225,7 +225,7 @@ struct RecordingInterruptionTests {
         try await Self.waitUntil("the recording to finish") { harness.appState.phase == .idle }
 
         let meta = try Self.readMeta(in: folder)
-        #expect(meta.state == .done)
+        #expect(meta.state == .transcribing)
         #expect(meta.audio == "audio.wav")
         #expect(meta.channels == [.room])
         // Whatever the recorder reported about the hardware is what meta.json says.
