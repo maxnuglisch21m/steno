@@ -10,7 +10,7 @@ format:
 
 | File | Type |
 |---|---|
-| `meta.json` | `MeetingMeta`, `MeetingState`, `MeetingMode`, `MeetingChannel`, `MeetingTrigger`, `AudioInputInfo`, `DisplayInfo`, `ModelIdentifiers` |
+| `meta.json` | `MeetingMeta`, `MeetingState`, `MeetingMode`, `MeetingChannel`, `MeetingTrigger`, `AudioInputInfo`, `SpeakerHint`, `DisplayInfo`, `ModelIdentifiers` |
 | folder name | `RecordingFolderName` |
 | `screens.jsonl` | `ScreensIndexEntry` |
 | `transcript.json` | `Transcript`, `Utterance`, `Token`, `DiarSegment`, `ModelIdentifiers` |
@@ -97,7 +97,7 @@ is what makes the file readable next to the folder name.
 | `duration` | number \| absent | Capture length in seconds. Absent while `state` is `recording`. |
 | `trigger` | object | `{"kind":"manual"}`, or `{"kind":"auto","bundleId":…,"name":…}`. |
 | `channels` | array | `["room"]` for `onsite`, `["system","mic"]` for `online`, in channel order. |
-| `input` | object | `{"device": string, "microphoneMode": string \| absent}`. |
+| `input` | object | `{"device": string, "microphoneMode": string \| absent}`. See below. |
 | `displays` | array | `[{"index":0,"id":1,"px":[3840,2160]}, …]`, in the order the screenshot file names use. |
 | `screenshots` | integer | Number of images written, i.e. lines in `screens.jsonl`. |
 | `app` | string | Steno's marketing version. |
@@ -116,6 +116,43 @@ working when they are absent.
 | `os` | string | The macOS version the recording was made on, e.g. `26.6.0`. |
 | `models` | object | `{"asr": string, "diarizer": string}`. Written when transcription finishes. |
 | `error` | string | Why the recording ended in `failed`. Written together with that state. |
+| `speakers` | object | `{"expected": integer}` — how many people the user said were in the room. `onsite` only, and only when asked. See below. |
+
+### `input`
+
+```json
+"input": {"device": "Tisch-Grenzflächenmikrofon", "microphoneMode": "wideSpectrum"}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `device` | string | Display name of the microphone that actually recorded — not the one that was configured, if that one turned out not to be attached. |
+| `microphoneMode` | string \| absent | The system-wide macOS microphone mode in force when the recording started. Absent when the recorder does not know it. |
+
+`microphoneMode` is one of exactly three values, matching
+`AVCaptureDevice.MicrophoneMode`:
+
+| Value | Meaning |
+|---|---|
+| `wideSpectrum` | Minimal processing, the whole room. What an `onsite` recording wants. |
+| `standard` | Light processing. Usable, and the recording says so in the menu while it runs. |
+| `voiceIsolation` | macOS damps every voice but the closest one. Steno **refuses** to start an `onsite` recording in this mode, so it should never appear on an `onsite` recording made by Steno — a file that carries it was made some other way, and its non-primary speakers are attenuated or gone. |
+
+`online` recordings are not gated on the mode: there the microphone channel is the
+user's own voice, and isolating it does no harm.
+
+### `speakers`
+
+```json
+"speakers": {"expected": 4}
+```
+
+Present only when the user was asked — an `onsite` setting that is off by default —
+and answered with a number rather than "automatic". It is a **hint**, never a
+measurement: it is fed to the diarizer as an upper and a lower bound on the speaker
+count, and it says nothing about how many speakers the transcript actually has. A
+reader must not treat it as a fact about the meeting, and should ignore a value
+outside 2–8.
 
 ### `channels`
 
@@ -201,6 +238,7 @@ The state is written continuously so that a crash is detectable. On the next lau
   "models": {"asr": "parakeet-tdt-0.6b-v3", "diarizer": "speaker-diarization"},
   "os": "26.6.0",
   "screenshots": 31,
+  "speakers": {"expected": 4},
   "started": "2026-09-09T14:30:12+02:00",
   "state": "done",
   "trigger": {"kind": "manual"}

@@ -61,6 +61,18 @@
         }
       }
     },
+    "Abbrechen": {
+      "comment": "Button that dismisses a dialog without recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
     "Ablageordner": {
       "comment": "Settings label: the root folder recordings go into.",
       "extractionState": "manual",
@@ -157,6 +169,30 @@
         }
       }
     },
+    "Aufnahme nicht möglich": {
+      "comment": "Title of the alert shown when Voice Isolation blocks an on-site recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot record"
+          }
+        }
+      }
+    },
+    "Aufnahme starten": {
+      "comment": "Button that confirms the speaker-count dialog and starts recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Recording"
+          }
+        }
+      }
+    },
     "Aufnahme stoppen": {
       "comment": "Menu item, only shown while recording.",
       "extractionState": "manual",
@@ -213,6 +249,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Auto-stop delay"
+          }
+        }
+      }
+    },
+    "Automatisch": {
+      "comment": "Speaker-count option: let diarization decide.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic"
           }
         }
       }
@@ -277,6 +325,18 @@
         }
       }
     },
+    "Breites Spektrum": {
+      "comment": "Microphone mode name, as Control Centre calls it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wide Spectrum"
+          }
+        }
+      }
+    },
     "Bundle-ID": {
       "comment": "Watchlist table column and text field placeholder.",
       "extractionState": "manual",
@@ -297,6 +357,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "The display holding the pointer is captured more often — that is where the meeting is happening."
+          }
+        }
+      }
+    },
+    "Das Eingabegerät liefert keine Kanäle.": {
+      "comment": "Shown when the selected input device reports no audio channels.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The input device reports no channels."
+          }
+        }
+      }
+    },
+    "Das Eingabegerät „%@“ ist verschwunden. Die Aufnahme wurde beendet.": {
+      "comment": "Shown when the selected microphone was unplugged during a recording. %@ is the device name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The input device “%@” disappeared. The recording has been stopped."
+          }
+        }
+      }
+    },
+    "Das Mikrofon ließ sich nicht öffnen: %@": {
+      "comment": "Shown when the audio engine refused to start. %@ is the technical detail.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The microphone could not be opened: %@"
           }
         }
       }
@@ -357,6 +453,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "The model download arrives with transcription (M5)."
+          }
+        }
+      }
+    },
+    "Die Audiodatei ließ sich nicht schreiben: %@": {
+      "comment": "Shown when writing audio.wav failed, a full volume being the usual cause. %@ is the technical detail.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio file could not be written: %@"
+          }
+        }
+      }
+    },
+    "Die Aufnahme wurde vom System beendet: %@": {
+      "comment": "Shown when the audio engine stopped and would not restart. %@ is the technical detail.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system stopped the recording: %@"
+          }
+        }
+      }
+    },
+    "Die Sprechertrennung findet die Zahl selbst. Wenn du sie kennst, wird sie zuverlässiger.": {
+      "comment": "Body of the speaker-count dialog.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaker separation finds the number by itself. If you know it, it gets more reliable."
           }
         }
       }
@@ -609,6 +741,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Microphone"
+          }
+        }
+      }
+    },
+    "Mikrofonmodus ändern …": {
+      "comment": "Button that opens the system microphone-mode interface.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Microphone Mode …"
+          }
+        }
+      }
+    },
+    "Mikrofonmodus „Standard“ – „Breites Spektrum“ nimmt den ganzen Raum auf.": {
+      "comment": "Menu hint while the microphone mode is Standard during an on-site recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone mode “Standard” — “Wide Spectrum” captures the whole room."
           }
         }
       }
@@ -1093,6 +1249,42 @@
         }
       }
     },
+    "Sprachisolierung": {
+      "comment": "Microphone mode name, as Control Centre calls it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Isolation"
+          }
+        }
+      }
+    },
+    "Sprachisolierung dämpft die anderen Teilnehmer.": {
+      "comment": "Reason an on-site recording is refused: macOS Voice Isolation is active.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Isolation damps the other participants."
+          }
+        }
+      }
+    },
+    "Sprachisolierung dämpft die anderen Teilnehmer. Für eine Raumaufnahme braucht Steno den Mikrofonmodus „Breites Spektrum“ oder „Standard“.": {
+      "comment": "Body of the alert shown when Voice Isolation blocks an on-site recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Isolation damps the other participants. A room recording needs the microphone mode “Wide Spectrum” or “Standard”."
+          }
+        }
+      }
+    },
     "Sprecherzahl vor einer Vor-Ort-Aufnahme abfragen": {
       "comment": "Settings toggle.",
       "extractionState": "manual",
@@ -1101,6 +1293,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ask how many speakers before an on-site recording"
+          }
+        }
+      }
+    },
+    "Standard": {
+      "comment": "Microphone mode name, as Control Centre calls it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
           }
         }
       }
@@ -1413,6 +1617,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Low disk space"
+          }
+        }
+      }
+    },
+    "Wie viele Personen sind im Raum?": {
+      "comment": "Title of the optional speaker-count dialog before an on-site recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How many people are in the room?"
           }
         }
       }

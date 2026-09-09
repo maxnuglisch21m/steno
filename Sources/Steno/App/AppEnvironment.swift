@@ -24,20 +24,20 @@ final class AppEnvironment {
     let coordinator: RecordingCoordinator
     let hotKeys: HotKeys
 
-    /// The recorder the coordinator drives. `NullRecorder` until M1 and M2 land the
-    /// real ones behind the same protocol.
-    let recorder: any AudioRecorder
+    /// Where the coordinator gets a recorder from. The default gives `onsite` the real
+    /// `MicRecorder` (M1) and leaves `online` on `NullRecorder` until M2.
+    let recorderFactory: any RecorderFactory
 
     init(
         settings: SettingsStore = SettingsStore(),
-        recorder: (any AudioRecorder)? = nil
+        recorderFactory: (any RecorderFactory)? = nil
     ) {
         self.settings = settings
         self.appState = AppState()
         self.store = RecordingStore()
         self.models = ModelManager(asrVersion: settings.settings.asrVersion)
         self.inputDevices = AudioInputDeviceList()
-        self.recorder = recorder ?? NullRecorder()
+        self.recorderFactory = recorderFactory ?? DefaultRecorderFactory()
 
         let models = self.models
         self.permissions = PermissionMonitor(modelsInstalled: { models.isInstalled })
@@ -46,7 +46,7 @@ final class AppEnvironment {
             appState: appState,
             settings: settings,
             store: store,
-            recorder: self.recorder
+            recorderFactory: self.recorderFactory
         )
         self.hotKeys = HotKeys()
     }

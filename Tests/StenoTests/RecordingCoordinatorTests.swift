@@ -168,6 +168,26 @@ struct RecordingCoordinatorTests {
         try await Self.waitUntil("it to finish") { harness.appState.lastMeetingURL != nil }
     }
 
+    @Test("a stop pressed during the start is honoured, not dropped")
+    func stopDuringStart() async throws {
+        let harness = Self.makeHarness()
+        defer { harness.tearDown() }
+
+        // ⌥⌘R and ⌥⌘S in quick succession: the second arrives while the microphone is
+        // still being opened. Dropping it would leave a recording running that the
+        // user believes they stopped.
+        harness.coordinator.startOnsite()
+        harness.coordinator.stop()
+
+        try await Self.waitUntil("the recording to start and stop again") {
+            harness.appState.lastMeetingURL != nil && harness.appState.phase == .idle
+        }
+        let folder = try #require(harness.appState.lastMeetingURL)
+        let meta = try Self.readMeta(in: folder)
+        #expect(meta.state == .done)
+        #expect(meta.ended != nil)
+    }
+
     @Test("stopping when nothing runs does nothing")
     func stopWithoutRecording() async throws {
         let harness = Self.makeHarness()

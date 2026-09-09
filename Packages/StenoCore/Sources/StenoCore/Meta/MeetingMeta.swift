@@ -74,6 +74,36 @@ public struct AudioInputInfo: Codable, Sendable, Hashable {
     }
 }
 
+/// What the user said about how many people are in the room.
+///
+/// Diarization finds the speaker count on its own, and usually well enough — but on
+/// room audio it is the hardest part of the job (specification §9), and the offline
+/// diarizer accepts a bound. So `onsite` may ask before it starts (specification §3b,
+/// off by default), and the answer is carried here to be fed into the diarizer's
+/// `clustering.minSpeakers` and `maxSpeakers` when transcription runs.
+///
+/// It is a hint, not a measurement: nothing downstream may treat `expected` as the
+/// number of speakers the transcript actually has.
+public struct SpeakerHint: Codable, Sendable, Hashable {
+    /// How many people the user expects, or `nil` for "let the diarizer decide".
+    public var expected: Int?
+
+    /// The range the picker offers, and the range `expected` is kept inside.
+    ///
+    /// One speaker needs no diarization and more than eight in one room is past the
+    /// point where a single microphone separates anything, so a value outside this is
+    /// a bug rather than a preference and is dropped instead of narrowing the
+    /// diarizer to nonsense.
+    public static let allowedRange = 2...8
+
+    public init(expected: Int?) {
+        self.expected = expected.flatMap { Self.allowedRange.contains($0) ? $0 : nil }
+    }
+
+    /// Whether this hint says anything at all. An empty hint is not written out.
+    public var isEmpty: Bool { expected == nil }
+}
+
 /// A display that was being captured, in the order the screenshot file names use.
 public struct DisplayInfo: Codable, Sendable, Hashable {
     /// Index used in screenshot file names — the `1` in `143012_d1_active.jpg`.
@@ -132,6 +162,9 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
     public var models: ModelIdentifiers?
     /// Why the recording ended in `failed`. Written together with that state.
     public var error: String?
+    /// What the user said about the number of people in the room, if asked.
+    /// Absent whenever nothing was said, which is the default.
+    public var speakers: SpeakerHint?
 
     public init(
         mode: MeetingMode,
@@ -150,7 +183,8 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
         appBuild: String? = nil,
         os: String? = nil,
         models: ModelIdentifiers? = nil,
-        error: String? = nil
+        error: String? = nil,
+        speakers: SpeakerHint? = nil
     ) {
         self.mode = mode
         self.started = started
@@ -169,6 +203,9 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
         self.os = os
         self.models = models
         self.error = error
+        // An empty hint is the same as no hint, and writing `"speakers":{}` into every
+        // `meta.json` would put a key in the format that says nothing.
+        self.speakers = speakers.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     // MARK: - State
@@ -189,6 +226,15 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
     public mutating func finishCapture(at end: Date) {
         ended = end
         duration = end.timeIntervalSince(started)
+    }
+
+    /// Records the speaker count the user gave, or clears the hint.
+    ///
+    /// Goes through `SpeakerHint`, so a count outside the allowed range and a `nil`
+    /// both end as no key at all rather than as a hint that means nothing.
+    public mutating func setExpectedSpeakers(_ count: Int?) {
+        let hint = SpeakerHint(expected: count)
+        speakers = hint.isEmpty ? nil : hint
     }
 
     // MARK: - Coding

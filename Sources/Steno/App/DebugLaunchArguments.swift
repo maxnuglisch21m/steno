@@ -12,7 +12,9 @@ import StenoCore
 /// accepting instructions from its command line.
 ///
 /// ```sh
-/// open build/Build/Products/Debug/Steno.app --args --simulate-recording 3 onsite
+/// open build/Build/Products/Debug/Steno.app --args --simulate-recording 15 onsite
+/// open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
+/// open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 /// open build/Build/Products/Debug/Steno.app --args --open-settings
 /// open build/Build/Products/Debug/Steno.app --args --open-onboarding
 /// ```
@@ -21,8 +23,18 @@ struct DebugLaunchArguments {
     var openOnboarding = false
     /// Seconds to record, and in which mode, before quitting.
     var simulate: (seconds: Double, mode: MeetingMode)?
+    /// Whether the simulation goes through the real recorders or through
+    /// `NullRecorder`. Real is the default: since M1 there is something to record.
+    var useNullRecorder = false
+    /// Print `AVCaptureDevice.activeMicrophoneMode` and quit. Specification §3b.1 is
+    /// gated on a system-wide setting that lives in Control Center, so being able to
+    /// read what the app sees, without a recording, is the only way to check it from
+    /// the outside.
+    var printMicrophoneMode = false
 
-    var isActive: Bool { openSettings || openOnboarding || simulate != nil }
+    var isActive: Bool {
+        openSettings || openOnboarding || printMicrophoneMode || simulate != nil
+    }
 
     init(_ arguments: [String]) {
         var index = 1
@@ -32,7 +44,10 @@ struct DebugLaunchArguments {
                 openSettings = true
             case "--open-onboarding":
                 openOnboarding = true
-            case "--simulate-recording":
+            case "--print-microphone-mode":
+                printMicrophoneMode = true
+            case "--simulate-recording", "--simulate-null-recording":
+                useNullRecorder = arguments[index] == "--simulate-null-recording"
                 let seconds = Double(arguments[safe: index + 1] ?? "") ?? 3
                 let mode = MeetingMode(rawValue: arguments[safe: index + 2] ?? "") ?? .onsite
                 simulate = (seconds, mode)
@@ -46,6 +61,11 @@ struct DebugLaunchArguments {
 
     @MainActor
     func run(in environment: AppEnvironment) {
+        if printMicrophoneMode {
+            reportMicrophoneMode()
+            NSApp.terminate(nil)
+            return
+        }
         if openOnboarding {
             OnboardingWindowController.shared.show(environment: environment)
         }
@@ -71,11 +91,35 @@ struct DebugLaunchArguments {
         runSimulation(simulate, in: environment)
     }
 
+    /// Prints the microphone mode the way `MicrophoneModeCheck` sees it, plus what the
+    /// gate would do with it.
+    @MainActor
+    private func reportMicrophoneMode() {
+        let active = MicrophoneModeCheck.active()
+        let preferred = MicrophoneModeCheck.preferred()
+        let decision: String
+        switch MicrophoneModeCheck.decision(for: active) {
+        case .proceed: decision = "proceed"
+        case .proceedWithHint: decision = "proceed-with-hint"
+        case .block: decision = "block"
+        }
+        let line = """
+        steno-debug: microphone mode: active=\(active?.rawValue ?? "unknown") \
+        preferred=\(preferred?.rawValue ?? "unknown") onsite=\(decision)
+
+        """
+        Log.audio.notice("debug: \(line, privacy: .public)")
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+
     @MainActor
     private func runSimulation(
         _ simulate: (seconds: Double, mode: MeetingMode),
         in environment: AppEnvironment
     ) {
+        if useNullRecorder {
+            environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
+        }
         Task { @MainActor in
             // The permission snapshot has to be in before `canStart` is asked, or the
             // simulation would refuse itself.
@@ -97,15 +141,35 @@ struct DebugLaunchArguments {
                 ? nil
                 : environment.appState.lastMeetingURL
             environment.coordinator.stop()
-            // Give the stop path its turn on the main actor before quitting.
-            try? await Task.sleep(for: .milliseconds(500))
+            // Wait for the stop path rather than guessing at it: with a real recorder
+            // it has hardware to release and a file to close, and quitting underneath
+            // that would leave exactly the truncated header M6 exists to repair.
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while environment.appState.phase != .idle, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
 
             let result = environment.appState.lastMeetingURL ?? folder
-            let line = "steno-debug: simulated \(simulate.mode.rawValue) recording → \(result?.stenoPath ?? "nothing")\n"
+            let line = """
+            steno-debug: simulated \(simulate.mode.rawValue) recording → \
+            \(result?.stenoPath ?? "nothing")\(Self.audioSummary(in: result))
+
+            """
             Log.app.notice("debug: \(line, privacy: .public)")
             FileHandle.standardError.write(Data(line.utf8))
             NSApp.terminate(nil)
         }
+    }
+
+    /// " · audio.wav 1440044 bytes", or nothing when no audio was written.
+    private static func audioSummary(in folder: URL?) -> String {
+        guard let folder else { return "" }
+        let audio = folder.appendingPathComponent(WAVWriter.fileName)
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(atPath: audio.stenoPath),
+            let size = attributes[.size] as? Int64
+        else { return "" }
+        return " · \(WAVWriter.fileName) \(size) bytes"
     }
 }
 

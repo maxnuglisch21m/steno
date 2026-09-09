@@ -101,6 +101,55 @@ The three shortcuts are registered globally through Carbon's
 for Accessibility permission. When a permission is missing, the record items are
 disabled and say which one, both in the title and in the tooltip.
 
+## Recording
+
+`audio.wav` is always 48 kHz 16-bit PCM, written straight to disk as it arrives —
+one channel for `onsite`, two for `online`. Nothing is buffered in memory, so an
+hour-long recording survives a crash: a WAV's own length fields are the only thing
+that breaks, and they are recomputable from the file. **No processing is applied.**
+No automatic gain control, no noise gate, no normalization, no voice processing.
+Every kind of sharpening makes speaker separation worse rather than better.
+
+Three things decide whether a room recording is worth transcribing, and none of them
+is code.
+
+**Input device.** The default is whatever macOS considers the input; any device
+from `AVCaptureDevice.devices(for: .audio)` can be chosen instead under
+**Einstellungen → Aufnahme**. A USB boundary microphone in the middle of the table
+is the single most effective quality lever there is, and it costs nothing in code —
+past about two metres, with table noise, or with two people talking at once,
+separation collapses regardless of the model. The device that actually recorded is
+named in `meta.input.device`; if the configured one is not attached, Steno records on
+the system default and says so there rather than refusing.
+
+**Microphone mode.** macOS applies one of three modes system-wide, from Control
+Centre, and Steno reads it before every `onsite` recording:
+
+| Mode | What Steno does |
+|---|---|
+| **Breites Spektrum** | records, in silence — this is the one a room wants |
+| **Standard** | records, and puts a hint in the menu for as long as the recording runs |
+| **Sprachisolierung** | **refuses**, with a dialog and a button that opens the microphone-mode interface |
+
+Voice Isolation damps every voice but the closest one, which is the exact opposite of
+a room recording: the other participants — the reason for recording — arrive
+attenuated or gone. Refusing beats producing a file that looks fine and is useless.
+The mode is read again on the next start, so changing it in Control Centre and
+pressing record is all it takes. `online` recordings are not gated on it: there the
+microphone channel is your own voice, and isolating it does no harm. The mode that
+was in force is recorded in `meta.input.microphoneMode`.
+
+**Speaker count.** Off by default. Turn on **Sprecherzahl vor einer
+Vor-Ort-Aufnahme abfragen** and a small dialog asks how many people are in the room
+before recording starts — "Automatisch", or 2 through 8. The answer goes into
+`meta.speakers.expected` and becomes the diarizer's lower and upper bound when the
+transcript is made. It is a hint, not a measurement.
+
+If the microphone is unplugged mid-recording, or the volume fills up, the recording
+ends by itself: the file is closed so that what was captured stays playable, the
+folder is marked `failed` with the reason in `meta.error`, and the menu says what
+happened.
+
 ## Settings
 
 Six tabs. The eleven settings from the specification come first within their
@@ -176,16 +225,29 @@ swift test --package-path Packages/StenoCore
 
 ### Debug launch arguments
 
-Debug builds accept three arguments, so the flow can be exercised without a
-meeting, a microphone, or a click:
+Debug builds accept a few arguments, so the flow can be exercised without a
+meeting, a click, or — where it is not the point — a microphone:
 
 ```sh
-# Record for three seconds through the null recorder, then quit. Leaves a real
-# meeting folder with a real meta.json behind.
-open build/Build/Products/Debug/Steno.app --args --simulate-recording 3 onsite
+# Record for 15 seconds through the real recorder, then quit. Leaves a meeting
+# folder with a real audio.wav and a real meta.json behind.
+open build/Build/Products/Debug/Steno.app --args --simulate-recording 15 onsite
+
+# The same flow with no hardware at all: folder and meta.json, no audio.
+open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
+
+# Print the microphone mode Steno sees, and what the on-site gate makes of it.
+open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 
 open build/Build/Products/Debug/Steno.app --args --open-settings
 open build/Build/Products/Debug/Steno.app --args --open-onboarding
+```
+
+The results are written to stderr and to the unified log, so a run can be checked
+without looking at the screen:
+
+```sh
+log stream --predicate 'subsystem == "de.21m.steno" && category == "audio"'
 ```
 
 They are compiled out of release builds: a shipped app has no business taking
@@ -278,8 +340,8 @@ These are properties of the approach, not bugs to be papered over:
 | | | Status |
 |---|---|---|
 | M0 | Menu-bar skeleton + permission onboarding | **done** |
-| M1 | `onsite` audio + microphone-mode check | in progress |
-| M2 | `online` audio: process tap + aggregate device, 2-channel WAV | planned |
+| M1 | `onsite` audio + microphone-mode check | **done** |
+| M2 | `online` audio: process tap + aggregate device, 2-channel WAV | in progress |
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | planned |
 | M4 | Screenshots across all displays | planned |
 | M5 | ASR + diarization + merge | planned |

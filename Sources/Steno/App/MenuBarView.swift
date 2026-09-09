@@ -22,13 +22,18 @@ struct MenuBarView: View {
     private var coordinator: RecordingCoordinator { environment.coordinator }
 
     var body: some View {
-        // A recording in progress says so at the top, and says nothing else: the line
-        // is not a command.
+        // A recording in progress says so at the top, and neither line is a command.
+        // The notice sits below the status rather than instead of it, because the
+        // microphone-mode hint from specification §3b.1 has to stay readable for the
+        // whole recording it applies to — that is the "Hinweis im Menü" the spec asks
+        // for, and it would be invisible if the clock displaced it.
         if let status = appState.recordingStatusLine {
             Text(status)
-            Divider()
-        } else if let notice = appState.notice {
+        }
+        if let notice = appState.notice {
             Text(notice)
+        }
+        if appState.recordingStatusLine != nil || appState.notice != nil {
             Divider()
         }
 

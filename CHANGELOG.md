@@ -13,6 +13,41 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **`onsite` audio (M1).** `MicRecorder` records the room microphone through
+  `AVAudioEngine` into `audio.wav` — 48 kHz, 16-bit PCM, one channel. The input
+  device from the settings is selected on the input node's audio unit before the
+  engine starts (`kAudioHardwarePropertyTranslateUIDToDevice` →
+  `kAudioOutputUnitProperty_CurrentDevice`), and falls back to the system default,
+  visibly in `meta.input.device`, when the configured one is not attached. No
+  processing whatsoever: no voice processing, no automatic gain control, no
+  normalization.
+- **`WAVWriter`.** The streaming writer both modes record through, one or two
+  channels. Buffers are copied on the audio thread and converted and written on the
+  writer's own serial queue, so a tap callback never waits for the disk and a
+  recording is never held in memory. An `AVAudioConverter` bridges whatever the
+  device delivers — any sample rate, Float32 or Int16, more than one channel — to
+  the file's format, and is kept across buffers so resampling stays continuous.
+- **Microphone-mode check (M1).** Before an `onsite` recording,
+  `AVCaptureDevice.activeMicrophoneMode` decides: `wideSpectrum` records in
+  silence, `standard` records with a hint in the menu, and `voiceIsolation` is
+  **refused** with a dialog whose button opens
+  `showSystemUserInterface(.microphoneModes)`. The mode is read again on every
+  start and on every menu redraw, so the record item enables itself as soon as it
+  is changed. `online` is not gated on it. The mode in force is written to
+  `meta.input.microphoneMode`.
+- **Speaker-count picker (M1).** With the setting on, an `onsite` recording asks
+  how many people are in the room — automatic, or 2 to 8 — and stores the answer
+  in the new optional `meta.json` key `"speakers": {"expected": 4}`
+  (`StenoCore.SpeakerHint`). M5 feeds it to the diarizer as `minSpeakers` and
+  `maxSpeakers`.
+- **Interruption handling.** A microphone that disappears, an engine that will not
+  restart within two seconds, and a failed write all end the recording the same
+  way: the file is closed so what was captured stays playable, `meta.json` is
+  finished with `ended`, `duration`, and the audio file name, and the folder is
+  marked `failed` with the reason. A sample-rate change on the same device is not a
+  loss — the engine is rebuilt and the recording continues into the same file.
+- Debug-only `--simulate-null-recording` (the old hardware-free path, now that
+  `--simulate-recording` uses the real recorder) and `--print-microphone-mode`.
 - Repository scaffolding: XcodeGen project definition, Makefile, CI workflow,
   issue and pull-request templates, and `scripts/changelog-extract.sh` for
   turning a section of this file into release notes.
@@ -71,3 +106,14 @@ release notes, and fails if it is missing.
   both transcript files.
 - Debug-only launch arguments `--simulate-recording`, `--open-settings`, and
   `--open-onboarding`, so the flow can be exercised without hardware.
+
+### Changed
+
+- `RecordingCoordinator` picks its recorder per recording through a
+  `RecorderFactory` — `MicRecorder` for `onsite`, `NullRecorder` for `online`
+  until M2 — instead of holding one for the life of the app.
+- A stop requested while a recording is still starting is remembered and honoured
+  once the recording exists, rather than silently dropped. Opening a microphone
+  takes a moment, and ⌥⌘R immediately followed by ⌥⌘S is a thing people do.
+- The menu shows a notice below the recording status line rather than instead of
+  it, so the microphone-mode hint stays readable for the whole recording.

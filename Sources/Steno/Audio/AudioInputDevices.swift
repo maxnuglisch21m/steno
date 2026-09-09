@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 import Observation
 
@@ -127,5 +128,53 @@ enum AudioInputDevices {
         let list = devices ?? available()
         if let match = list.first(where: { $0.uid == uid }) { return match.name }
         return uid
+    }
+
+    /// The Core Audio device object for an `AVCaptureDevice.uniqueID`.
+    ///
+    /// `AVAudioEngine` has no notion of `AVCaptureDevice`: to record from a particular
+    /// microphone the input node's audio unit has to be told an `AudioDeviceID`, and
+    /// the only supported way from the UID to that number is
+    /// `kAudioHardwarePropertyTranslateUIDToDevice`. The two identifier spaces do
+    /// coincide — an `AVCaptureDevice.uniqueID` for an audio device *is* its Core Audio
+    /// UID — which is what makes §3b.2's "any device from
+    /// `AVCaptureDevice.devices(for: .audio)`" reachable from the engine at all.
+    ///
+    /// Returns `nil` when the device is not attached, which is the case the caller has
+    /// to treat as "fall back to the system default and say so".
+    static func coreAudioDeviceID(forUID uid: String) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var cfUID = uid as CFString
+        var deviceID = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = withUnsafeMutablePointer(to: &cfUID) { pointer in
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                UInt32(MemoryLayout<CFString>.size),
+                pointer,
+                &size,
+                &deviceID
+            )
+        }
+        guard status == noErr, deviceID != AudioDeviceID(kAudioObjectUnknown) else {
+            Log.audio.error(
+                "could not translate an input device UID: OSStatus \(status, privacy: .public)"
+            )
+            return nil
+        }
+        return deviceID
+    }
+
+    /// Whether a device with this UID is attached right now.
+    ///
+    /// Asked after a configuration change, to tell a device that was unplugged from a
+    /// device that merely changed its sample rate.
+    static func isAttached(uid: String) -> Bool {
+        coreAudioDeviceID(forUID: uid) != nil
     }
 }
