@@ -349,6 +349,18 @@
         }
       }
     },
+    "Das Audiosystem antwortet nicht. Bitte den Mac neu starten oder `sudo killall coreaudiod` ausführen.": {
+      "comment": "Shown when a recorder does not answer within 15 seconds, i.e. the audio daemon is wedged.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio system is not responding. Restart the Mac, or run `sudo killall coreaudiod`."
+          }
+        }
+      }
+    },
     "Das Display mit dem Mauszeiger wird häufiger gesichert — dort passiert das Meeting.": {
       "comment": "Explains the two screenshot intervals.",
       "extractionState": "manual",
@@ -393,6 +405,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "The microphone could not be opened: %@"
+          }
+        }
+      }
+    },
+    "Das gemeinsame Audiogerät ließ sich nicht anlegen: %@": {
+      "comment": "The aggregate device holding the microphone and the tap could not be created.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The combined audio device could not be created: %@"
           }
         }
       }
@@ -457,6 +481,30 @@
         }
       }
     },
+    "Der System-Audio-Mitschnitt ließ sich nicht einrichten: %@": {
+      "comment": "The Core Audio process tap could not be created.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System audio capture could not be set up: %@"
+          }
+        }
+      }
+    },
+    "Die Audioaufnahme ließ sich nicht starten: %@": {
+      "comment": "The aggregate device's I/O proc could not be created or started.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio recording could not be started: %@"
+          }
+        }
+      }
+    },
     "Die Audiodatei ließ sich nicht schreiben: %@": {
       "comment": "Shown when writing audio.wav failed, a full volume being the usual cause. %@ is the technical detail.",
       "extractionState": "manual",
@@ -477,6 +525,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "The system stopped the recording: %@"
+          }
+        }
+      }
+    },
+    "Die Kanalaufteilung des Audiogeräts ist unerwartet. Die Aufnahme wurde nicht gestartet.": {
+      "comment": "The aggregate device reported a channel layout the recorder cannot map to two channels.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio device reports an unexpected channel layout. The recording was not started."
           }
         }
       }
@@ -537,6 +597,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remove"
+          }
+        }
+      }
+    },
+    "Es ist kein Eingabegerät verfügbar: %@": {
+      "comment": "Online recording could not find a microphone to build the aggregate device around.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No input device is available: %@"
           }
         }
       }

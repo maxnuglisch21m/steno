@@ -10,8 +10,10 @@ import Foundation
 public enum RecordingFolderName {
     /// The label used in place of an app name for `onsite` recordings.
     public static let onsiteLabel = "Vorort"
-    /// The label used for an `online` recording whose triggering app is unknown.
-    public static let unknownAppLabel = "Meeting"
+    /// The label used for an `online` recording whose triggering app is unknown —
+    /// a manual start with nothing identifiable in a meeting, which is recorded with a
+    /// system-wide tap and is therefore about the Mac rather than about one app.
+    public static let unknownAppLabel = "Online"
     /// Upper bound on the title slug, in characters.
     public static let maxTitleSlugLength = 40
     /// How many collision suffixes to try before giving up. `_2` through `_999`.

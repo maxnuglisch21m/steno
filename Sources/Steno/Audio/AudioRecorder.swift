@@ -38,6 +38,72 @@ enum AudioInterruptionReason: Sendable, Equatable {
     }
 }
 
+/// A recorder that did not answer.
+///
+/// Not a theoretical failure. `coreaudiod` can get into a state — a tap left behind by
+/// a killed process is one way in — where every call that opens an input blocks inside
+/// the HAL forever. Nothing in the audio API has a timeout, and there is no way to
+/// cancel a call that is already inside the daemon, so the only defence is to stop
+/// waiting: the recording is marked `failed`, the menu goes back to idle, and the user
+/// is told the one thing that actually fixes it.
+enum RecorderTimeout: LocalizedError, CustomStringConvertible, Equatable {
+    case start
+    case stop
+
+    var description: String {
+        switch self {
+        case .start: return "the recorder did not answer while starting"
+        case .stop: return "the recorder did not answer while stopping"
+        }
+    }
+
+    var errorDescription: String? {
+        String(localized: "Das Audiosystem antwortet nicht. Bitte den Mac neu starten oder `sudo killall coreaudiod` ausführen.")
+    }
+}
+
+/// What the `online` process tap points at. Specification §3a.1.
+///
+/// Tapping one app is worth more than tapping the whole Mac: ch0 then holds the
+/// meeting and nothing else — not the music that was left playing, not a notification
+/// sound. But naming an app is only possible when exactly one is identifiable, so the
+/// system-wide tap is the honest fallback rather than a guess between two.
+enum TapTarget: Sendable, Equatable {
+    /// One app's mix, via `CATapDescription(stereoMixdownOfProcesses:)`.
+    ///
+    /// `bundleId` and `name` are carried along for `meta.trigger` and the folder name;
+    /// only `pid` reaches Core Audio, through
+    /// `kAudioHardwarePropertyTranslatePIDToProcessObject`.
+    case process(pid: pid_t, bundleId: String, name: String)
+    /// Everything the Mac plays except Steno itself, via
+    /// `CATapDescription(stereoGlobalTapButExcludeProcesses:)`.
+    case systemWide
+
+    /// The app name for the folder, or `nil` when there is no single app — which is
+    /// what makes the folder `…_Online`.
+    var appName: String? {
+        switch self {
+        case .process(_, _, let name): return name
+        case .systemWide: return nil
+        }
+    }
+
+    var bundleId: String? {
+        switch self {
+        case .process(_, let bundleId, _): return bundleId
+        case .systemWide: return nil
+        }
+    }
+
+    /// One phrase for the log. Not localized: this is a log line, not an interface.
+    var logDescription: String {
+        switch self {
+        case .process(let pid, let bundleId, _): return "\(bundleId) (pid \(pid))"
+        case .systemWide: return "system-wide"
+        }
+    }
+}
+
 /// What a recorder needs to know to start.
 struct AudioRecorderConfiguration: Sendable {
     var mode: MeetingMode
@@ -47,6 +113,8 @@ struct AudioRecorderConfiguration: Sendable {
     var inputDeviceUID: String?
     /// When the recording started, so that timestamps line up with `meta.json`.
     var started: Date
+    /// What the `online` process tap captures. Ignored by `onsite`, which has no tap.
+    var tapTarget: TapTarget = .systemWide
     /// Called at most once, from whatever thread noticed, when capture ends by itself.
     ///
     /// Carried in the configuration rather than added to the protocol so that both
@@ -140,15 +208,15 @@ protocol RecorderFactory: Sendable {
     func recorder(for mode: MeetingMode) -> any AudioRecorder
 }
 
-/// The real thing: `MicRecorder` for `onsite`, and `NullRecorder` for `online` until
-/// M2 lands the tap.
+/// The real thing: `MicRecorder` for `onsite` (§3b), `ProcessTapRecorder` for `online`
+/// (§3a).
 struct DefaultRecorderFactory: RecorderFactory {
     func recorder(for mode: MeetingMode) -> any AudioRecorder {
         switch mode {
         case .onsite:
             return MicRecorder()
         case .online:
-            return NullRecorder()
+            return ProcessTapRecorder()
         }
     }
 }

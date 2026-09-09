@@ -132,10 +132,15 @@ struct RecordingCoordinatorTests {
         #expect(RecordingFolderName.matches(name))
     }
 
-    @Test("an online recording with no known app is named Meeting")
+    @Test("an online recording with no known app is named Online")
     func namesOnlineFolder() async throws {
         let harness = Self.makeHarness()
         defer { harness.tearDown() }
+        // An empty watchlist is what "no known app" means: nothing can match, so the
+        // tap is system-wide and the folder is named for the mode. Without this the
+        // test would depend on whether a browser on the real watchlist happens to be
+        // holding the microphone on the machine running it.
+        harness.settings.settings.watchlist = []
 
         harness.coordinator.startOnline()
         try await Self.waitUntil("online to start") { harness.appState.phase.isRecording }
@@ -143,7 +148,7 @@ struct RecordingCoordinatorTests {
         try await Self.waitUntil("online to finish") { harness.appState.lastMeetingURL != nil }
 
         let name = try #require(harness.appState.lastMeetingURL?.lastPathComponent)
-        #expect(name.hasSuffix("_Meeting"))
+        #expect(name.hasSuffix("_Online"))
     }
 
     @Test("a second start while recording is ignored")

@@ -13,6 +13,38 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **`online` audio (M2).** `ProcessTapRecorder` records a meeting as two channels in
+  one `audio.wav` — 48 kHz, 16-bit PCM, ch0 the tapped system audio downmixed to
+  mono, ch1 the microphone. A `CATapDescription` process tap and the default input
+  device are members of a single private aggregate device
+  (`AudioHardwareCreateAggregateDevice`), so both channels share one clock and one
+  `AudioDeviceCreateIOProcIDWithBlock` callback and stay sample-aligned for the length
+  of a meeting; the microphone is the clock master and the tap follows it with drift
+  compensation. Adapted from [AudioCap](https://github.com/insidegui/AudioCap)
+  (BSD-2-Clause), now credited in `ThirdPartyLicenses/`.
+- **A real-time safe capture path.** The I/O callback allocates nothing, takes no
+  lock, logs nothing, and touches no actor: it averages the tap's channels, copies
+  the microphone's first channel, and writes interleaved frames into a preallocated
+  lock-free SPSC ring buffer (`RingBuffer.swift`, four seconds at 48 kHz). A timer on
+  its own queue drains the ring into `WAVWriter` every 50 ms. Dropped frames are
+  counted and reported in the log; the expected number is zero.
+- **Channel mapping is read, not assumed** (`AggregateChannelMap`). The aggregate's
+  `kAudioDevicePropertyStreamConfiguration` and the tap's `kAudioTapPropertyFormat`
+  decide which sample is which, so a mono built-in microphone, a stereo interface and
+  an eight-channel desk all map correctly, and the mapping is logged on every start.
+- **Tap target selection** (`Detection/RunningMeetingApps.swift`). A manual `online`
+  start asks Core Audio which processes are reading the microphone
+  (`kAudioHardwarePropertyProcessObjectList` + `kAudioProcessPropertyIsRunningInput`);
+  exactly one watchlist app means the tap points at that app, names the folder after it
+  (`…_Teams`) and records it in `meta.trigger` — `kind` stays `manual`. Otherwise the
+  tap is system-wide with Steno's own process excluded, and the folder is `…_Online`.
+- **Deadlines on starting and stopping a recorder.** Nothing in Core Audio has a
+  timeout, and a wedged `coreaudiod` blocks every call that opens an input forever.
+  Both halves now give up after fifteen seconds and leave a folder marked `failed`
+  with a reason that says what fixes it, instead of a menu stuck refusing every start.
+  A start that finishes late is stopped again and its audio file removed; a stop that
+  finishes late keeps the partial recording.
+- Debug-only `--tap-target <bundle id>`, which forces the `online` tap at one app.
 - **`onsite` audio (M1).** `MicRecorder` records the room microphone through
   `AVAudioEngine` into `audio.wav` — 48 kHz, 16-bit PCM, one channel. The input
   device from the settings is selected on the input node's audio unit before the
@@ -109,11 +141,26 @@ release notes, and fails if it is missing.
 
 ### Changed
 
+- The folder label for an `online` recording with no identifiable app is now
+  `Online` rather than `Meeting` (`StenoCore.RecordingFolderName.unknownAppLabel`):
+  such a recording is a system-wide tap, and the name says what was recorded.
+- `meta.trigger` may carry `bundleId` and `name` with `kind: "manual"`. A reader must
+  not take the presence of an app as proof that detection fired — documented in
+  `docs/FORMAT.md`.
 - `RecordingCoordinator` picks its recorder per recording through a
-  `RecorderFactory` — `MicRecorder` for `onsite`, `NullRecorder` for `online`
-  until M2 — instead of holding one for the life of the app.
+  `RecorderFactory` — `MicRecorder` for `onsite`, `ProcessTapRecorder` for `online`
+  — instead of holding one for the life of the app.
 - A stop requested while a recording is still starting is remembered and honoured
   once the recording exists, rather than silently dropped. Opening a microphone
   takes a moment, and ⌥⌘R immediately followed by ⌥⌘S is a thing people do.
 - The menu shows a notice below the recording status line rather than instead of
   it, so the microphone-mode hint stays readable for the whole recording.
+
+### Fixed
+
+- `kAudioAggregateDeviceTapAutoStartKey` is **off**, unlike in AudioCap. With it on,
+  the aggregate device's callback only runs while the tap is running, so a tap on an
+  app that happens to be silent produced no callbacks at all — measured here as zero
+  in ten seconds, against 240 128 frames in five with it off. That would have taken
+  the microphone channel down with it every time the far end went quiet, and closed
+  the gap up so that nothing in the file lined up with the clock any more.

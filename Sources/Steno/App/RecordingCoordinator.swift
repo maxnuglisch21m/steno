@@ -56,12 +56,28 @@ enum StartBlocker: Sendable, Equatable {
 /// Starts and stops recordings, and keeps `AppState` and `meta.json` in step.
 ///
 /// This is the only place that decides a recording begins or ends. The audio itself
-/// arrives through `AudioRecorder`, which is a `NullRecorder` in M0 and a real one in
-/// M1 and M2 — so the flow below (folder, `meta.json` at every state change, disk
-/// check, `mm:ss`, hotkeys) is finished and exercised now rather than being written
-/// twice.
+/// arrives through `AudioRecorder` — `MicRecorder` for `onsite`, `ProcessTapRecorder`
+/// for `online`, `NullRecorder` for the tests — so the flow below (folder, `meta.json`
+/// at every state change, disk check, `mm:ss`, hotkeys) is one path regardless of what
+/// is being recorded.
 @MainActor
 final class RecordingCoordinator {
+    /// How long a recorder is given to open the hardware before the recording is
+    /// declared failed.
+    ///
+    /// Nothing in Core Audio has a timeout of its own. A wedged `coreaudiod` — which
+    /// is a real state a Mac gets into — makes `AudioDeviceCreateIOProcID` block
+    /// forever, and without this the coordinator would sit in `isTransitioning` with
+    /// the menu frozen until the app was killed. Fifteen seconds is far longer than
+    /// any healthy handshake, which takes tens of milliseconds and, on a busy machine,
+    /// occasionally a few seconds.
+    static let defaultRecorderTimeout: Duration = .seconds(15)
+
+    /// The deadline for opening the hardware, and the one for closing it. A stop that
+    /// hangs must still leave a finished folder behind.
+    private(set) var recorderStartTimeout = RecordingCoordinator.defaultRecorderTimeout
+    private(set) var recorderStopTimeout = RecordingCoordinator.defaultRecorderTimeout
+
     private let appState: AppState
     private let settings: SettingsStore
     private let store: RecordingStore
@@ -126,6 +142,17 @@ final class RecordingCoordinator {
         guard !appState.phase.isRecording else { return }
         recorderFactory = factory
     }
+
+    /// Forces the `online` tap onto one app, whatever detection would have picked.
+    /// `--tap-target <bundle id>`, and nothing else, sets this.
+    var forcedTapTargetBundleId: String?
+
+    /// Shortens the two deadlines, so the timeout paths can be tested in under a
+    /// second rather than in half a minute. Tests only.
+    func setRecorderTimeouts(start: Duration, stop: Duration) {
+        recorderStartTimeout = start
+        recorderStopTimeout = stop
+    }
     #endif
 
     // MARK: - May we?
@@ -177,9 +204,10 @@ final class RecordingCoordinator {
 
     /// Starts a recording, or does nothing and says why.
     ///
-    /// `appName` and `title` come from detection in M3; in M0 both are `nil` for a
-    /// manual start, which is what makes the folder `…_Meeting` for `online` and
-    /// `…_Vorort` for `onsite`.
+    /// `appName` and `title` come from detection in M3. Both are `nil` for a manual
+    /// start; `online` then works out its own tap target and takes the app name from
+    /// whatever turned out to be tapped, or falls back to `…_Online`, and `onsite` is
+    /// always `…_Vorort`.
     func start(
         mode: MeetingMode,
         trigger: MeetingTrigger,
@@ -263,11 +291,29 @@ final class RecordingCoordinator {
         // Fresh, not cached: this is the moment the number actually decides something.
         warnIfDiskSpaceIsLow(at: root, bytes: DiskSpace.availableBytesNow(at: root))
 
+        // What the `online` tap will capture, and what that makes the folder and
+        // `meta.trigger` say. `onsite` has no tap and the value is ignored.
+        var tapTarget = TapTarget.systemWide
+        var resolvedAppName = appName
+        var resolvedTrigger = trigger
+        if mode == .online {
+            tapTarget = resolveOnlineTapTarget()
+            if let name = tapTarget.appName {
+                // Detection (M3) names the app itself and wins; a manual start takes
+                // the name from whichever app turned out to be tapped.
+                resolvedAppName = appName ?? name
+                if resolvedTrigger.bundleId == nil {
+                    resolvedTrigger.bundleId = tapTarget.bundleId
+                    resolvedTrigger.name = name
+                }
+            }
+        }
+
         let folder = store.meetingFolderURL(
             in: root,
             started: started,
             mode: mode,
-            appName: appName,
+            appName: resolvedAppName,
             title: settings.settings.includeTitleInFolderName ? title : nil
         )
 
@@ -276,7 +322,7 @@ final class RecordingCoordinator {
         let meta = MeetingMeta(
             mode: mode,
             started: started,
-            trigger: trigger,
+            trigger: resolvedTrigger,
             input: AudioInputInfo(
                 device: AudioInputDevices.displayName(forUID: settings.settings.onsiteInputDeviceUID)
             ),
@@ -315,26 +361,35 @@ final class RecordingCoordinator {
             }
         }
 
-        do {
-            let opened = try await newRecorder.start(
-                AudioRecorderConfiguration(
-                    mode: mode,
-                    folder: folder,
-                    inputDeviceUID: settings.settings.onsiteInputDeviceUID,
-                    started: started,
-                    onInterruption: onInterruption
-                )
-            )
+        let configuration = AudioRecorderConfiguration(
+            mode: mode,
+            folder: folder,
+            inputDeviceUID: settings.settings.onsiteInputDeviceUID,
+            started: started,
+            tapTarget: tapTarget,
+            onInterruption: onInterruption
+        )
+        // Under a deadline, because a hung audio daemon has no other way out: see
+        // `recorderStartTimeout`.
+        switch await Deadline.run(recorderStartTimeout, operation: { try await newRecorder.start(configuration) }) {
+        case .finished(.success(let opened)):
             try? newSession.update { meta in
                 meta.input = AudioInputInfo(
                     device: opened.deviceName,
                     microphoneMode: opened.microphoneMode
                 )
             }
-        } catch {
+        case .finished(.failure(let error)):
             Log.audio.error("recorder refused to start: \(error.localizedDescription, privacy: .public)")
             newSession.fail(reason: error.localizedDescription)
             appState.notice = error.localizedDescription
+            return
+        case .timedOut(let task):
+            let reason = RecorderTimeout.start.localizedDescription
+            Log.audio.error("the recorder did not answer within 15 s; giving up on this recording")
+            abandon(start: task, recorder: newRecorder, folder: folder)
+            newSession.fail(reason: reason)
+            appState.notice = reason
             return
         }
 
@@ -347,6 +402,55 @@ final class RecordingCoordinator {
         Log.app.notice(
             "recording started: \(mode.rawValue, privacy: .public) in \(folder.lastPathComponent, privacy: .public)"
         )
+    }
+
+    /// What an `online` recording taps, decided at the moment it starts.
+    ///
+    /// M2 only has the manual case: if exactly one watchlist app is reading the
+    /// microphone right now, that app is the meeting and the tap points at it — which
+    /// also gives the folder its name and fills in `meta.trigger` even though the
+    /// recording was started by hand. Anything else — nothing running, or two apps at
+    /// once — is a system-wide tap and a folder called `…_Online`. M3 replaces the
+    /// guess with actual detection and passes the app in.
+    private func resolveOnlineTapTarget() -> TapTarget {
+        let watchlist = settings.settings.watchlist
+        #if DEBUG
+        if let forced = forcedTapTargetBundleId {
+            if let target = RunningMeetingApps.target(
+                forBundleId: forced,
+                in: RunningMeetingApps.current(),
+                watchlist: watchlist
+            ) {
+                Log.detection.notice("tap target forced to \(forced, privacy: .public)")
+                return target
+            }
+            Log.detection.error(
+                "no audio process for the forced tap target \(forced, privacy: .public); tapping the whole system"
+            )
+            return .systemWide
+        }
+        #endif
+        return RunningMeetingApps.currentTarget(watchlist: watchlist)
+    }
+
+    /// Cleans up after a `start` that timed out and then finished anyway.
+    ///
+    /// Abandoning the wait is not the same as forgetting: a start that comes back two
+    /// minutes late has opened the hardware and written a WAV header, and both have to
+    /// go — otherwise the microphone stays live behind a menu that says idle, and the
+    /// folder keeps a zero-length `audio.wav` that `meta.json` never mentions.
+    private nonisolated func abandon(
+        start task: Task<AudioRecorderStart, any Error>,
+        recorder: any AudioRecorder,
+        folder: URL
+    ) {
+        Task.detached {
+            _ = try? await task.value
+            _ = try? await recorder.stop()
+            let audio = folder.appendingPathComponent(WAVWriter.fileName)
+            try? FileManager.default.removeItem(at: audio)
+            Log.audio.notice("a late recorder start was stopped again and its audio file removed")
+        }
     }
 
     // MARK: - Stopping
@@ -396,10 +500,25 @@ final class RecordingCoordinator {
 
         let ended = Date()
         var outcome: AudioRecorderOutcome?
-        do {
-            outcome = try await stopping?.stop()
-        } catch {
-            Log.audio.error("recorder failed on stop: \(error.localizedDescription, privacy: .public)")
+        var stopTimedOut = false
+        if let stopping {
+            switch await Deadline.run(recorderStopTimeout, operation: { try await stopping.stop() }) {
+            case .finished(.success(let value)):
+                outcome = value
+            case .finished(.failure(let error)):
+                Log.audio.error("recorder failed on stop: \(error.localizedDescription, privacy: .public)")
+            case .timedOut(let task):
+                stopTimedOut = true
+                Log.audio.error("the recorder did not answer the stop within 15 s")
+                // Let it finish on its own time: the file it is closing is the
+                // recording, and the frames still in flight belong in it.
+                Task.detached { _ = try? await task.value }
+            }
+        }
+
+        if stopTimedOut {
+            finishAfterStopTimeout(session: session, ended: ended)
+            return
         }
 
         appState.phase = .processing(progress: nil, label: String(localized: "Verarbeitung"))
@@ -432,6 +551,30 @@ final class RecordingCoordinator {
         )
     }
 
+    /// Finishes a folder whose recorder never answered the stop.
+    ///
+    /// The audio that reached the disk stays: `WAVWriter` writes as it goes, so
+    /// whatever is in `audio.wav` is playable to within a fraction of a second of the
+    /// stop, and the header is repairable in M6 if the writer never closed it. What
+    /// the folder does *not* get is `done` — nothing here knows whether the recording
+    /// is complete, and a folder that says `failed` with a reason is worth more than
+    /// one that claims a clean ending it cannot vouch for.
+    private func finishAfterStopTimeout(session: RecordingSession, ended: Date) {
+        let audio = session.folder.appendingPathComponent(WAVWriter.fileName)
+        let hasAudio = FileManager.default.fileExists(atPath: audio.stenoPath)
+        let mode = session.meta.mode
+        try? session.update { meta in
+            meta.finishCapture(at: ended)
+            meta.channels = mode.channels
+            meta.audio = hasAudio ? WAVWriter.fileName : nil
+        }
+        let reason = RecorderTimeout.stop.localizedDescription
+        session.fail(reason: reason)
+        appState.lastMeetingURL = session.folder
+        appState.notice = reason
+        appState.phase = .idle
+    }
+
     // MARK: - Interruptions
 
     /// The recording ended without anyone asking: the device went away, or the file
@@ -455,10 +598,16 @@ final class RecordingCoordinator {
         Log.audio.error("recording interrupted: \(reason.localizedReason, privacy: .public)")
 
         let ended = Date()
+        let deadline = recorderStopTimeout
         Task { [weak self] in
             // The recorder has already closed its file; this is what releases the
-            // hardware and hands back what was written.
-            let outcome = try? await stopping?.stop()
+            // hardware and hands back what was written. Under the same deadline as an
+            // ordinary stop: a folder that says `failed` is the whole point of this
+            // path, and it must not be held up by hardware that will not let go.
+            var outcome: AudioRecorderOutcome?
+            if let stopping {
+                outcome = await Deadline.run(deadline) { try await stopping.stop() }.value
+            }
             guard let self else { return }
             self.finishInterrupted(
                 session: session,

@@ -62,8 +62,10 @@ YYYY-MM-DD_HHMM_<label>[_<title-slug>][_<n>]
   the time zone the recording was made in. The exact instant, with its UTC offset, is
   in `meta.started`.
 - `<label>` is the triggering app's name for `online` (`Teams`, `Zoom`, `Chrome`),
-  the literal `Vorort` for `onsite`, and `Meeting` for an `online` recording whose
-  app is unknown. It is sanitized the same way a title slug is.
+  the literal `Vorort` for `onsite`, and `Online` for an `online` recording whose
+  app is unknown — a manual start with no single meeting app identifiable, which is
+  recorded with a system-wide tap and is therefore about the Mac rather than about
+  one app. It is sanitized the same way a title slug is.
 - `<title-slug>` is present only when a meeting title was known and the
   "include title in folder name" setting is on. German umlauts are transliterated
   (`ä` → `ae`, `ß` → `ss`), other diacritics are stripped (`é` → `e`), everything
@@ -95,7 +97,7 @@ is what makes the file readable next to the folder name.
 | `started` | ISO 8601 | When capture began. |
 | `ended` | ISO 8601 \| absent | When capture stopped. Absent while `state` is `recording`. |
 | `duration` | number \| absent | Capture length in seconds. Absent while `state` is `recording`. |
-| `trigger` | object | `{"kind":"manual"}`, or `{"kind":"auto","bundleId":…,"name":…}`. |
+| `trigger` | object | `{"kind":"manual"}` or `{"kind":"auto",…}`, either of which may carry `bundleId` and `name`. See below. |
 | `channels` | array | `["room"]` for `onsite`, `["system","mic"]` for `online`, in channel order. |
 | `input` | object | `{"device": string, "microphoneMode": string \| absent}`. See below. |
 | `displays` | array | `[{"index":0,"id":1,"px":[3840,2160]}, …]`, in the order the screenshot file names use. |
@@ -117,6 +119,28 @@ working when they are absent.
 | `models` | object | `{"asr": string, "diarizer": string}`. Written when transcription finishes. |
 | `error` | string | Why the recording ended in `failed`. Written together with that state. |
 | `speakers` | object | `{"expected": integer}` — how many people the user said were in the room. `onsite` only, and only when asked. See below. |
+
+### `trigger`
+
+```json
+"trigger": {"kind": "manual", "bundleId": "com.microsoft.teams2", "name": "Teams"}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `kind` | `"manual"` \| `"auto"` | `manual` = started from the menu or a hotkey. `auto` = started by detection, from the suggestion popup or an `always` rule. |
+| `bundleId` | string \| absent | The app whose audio was tapped. `online` only. |
+| `name` | string \| absent | That app's display name, the same string the folder is named after. |
+
+**`kind: "manual"` may carry an app too**, and a reader must not treat `bundleId` as
+proof that detection fired. When an `online` recording is started by hand, Steno asks
+Core Audio which processes are reading the microphone: if exactly one of them is on the
+watchlist, that app is what the tap points at, and it is recorded here and in the folder
+name. `kind` still says `manual`, because that is what it was — the two facts are
+independent, and conflating them would make "did the user start this?" unanswerable.
+
+Both keys are absent when no single app could be identified. The recording is then made
+with a system-wide tap and the folder is named `…_Online`.
 
 ### `input`
 
@@ -265,7 +289,18 @@ archive format.
 
 No processing is applied on the way in: no AGC, no noise gate, no normalization. The
 raw signal goes to the models, because every kind of sharpening makes diarization
-worse rather than better.
+worse rather than better. The one arithmetic operation an `online` recording performs
+is the downmix of the tap's channels to mono for ch0 — an unweighted mean, because ch0
+is one voice channel and a meeting app's stereo mix carries no information in its
+stereo image.
+
+The two channels of an `online` file are **sample-aligned for the whole recording**.
+They come from one Core Audio aggregate device holding both the microphone and the
+process tap, so they share a clock and arrive in the same callback; the microphone is
+the clock master and the tap follows it with drift compensation. Two separate captures
+would drift apart over an hour, which is why the specification calls that the fallback
+rather than the design. Nothing in `meta.json` is needed to line the channels up: frame
+*n* of ch0 and frame *n* of ch1 happened at the same moment.
 
 ---
 

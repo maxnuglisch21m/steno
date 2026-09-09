@@ -110,6 +110,39 @@ that breaks, and they are recomputable from the file. **No processing is applied
 No automatic gain control, no noise gate, no normalization, no voice processing.
 Every kind of sharpening makes speaker separation worse rather than better.
 
+### `online`: what is actually captured
+
+Two channels in one file, from **one** Core Audio aggregate device that holds the
+microphone and a process tap at the same time. That is the whole design: one device
+means one clock and one callback, so channel 0 and channel 1 stay sample-aligned for
+the length of a meeting. Two separate captures would drift apart over an hour.
+
+| Channel | Content |
+|---|---|
+| ch0 | the tapped system audio, every tap channel averaged to mono |
+| ch1 | the microphone's first channel — you |
+
+The tap points at the meeting app when Steno can name one: on a manual start it asks
+Core Audio which processes are reading the microphone, and if exactly one of them is on
+the watchlist, that app is what gets tapped. The folder is then named after it
+(`…_Teams`) and `meta.trigger` records it, even though `kind` stays `manual`. If nothing
+is identifiable, or two watchlist apps are live at once, the tap is system-wide with
+Steno itself excluded, and the folder is called `…_Online`. A system-wide tap records
+everything the Mac is playing, music included.
+
+**There are no per-speaker tracks.** A process tap sees the meeting app's finished mix
+and nothing else; Teams hands out individual participant streams only through its
+cloud compliance-recording API, which is not something a local recorder can reach.
+Separating the other participants is therefore diarization's job, on ch0, after the
+recording. Channel 1 is the compensation: it is physically separate, it is always you,
+and it never needs a model to say so.
+
+Nothing is muted while recording — the meeting is heard normally throughout — and the
+aggregate device is private, so it never shows up in Sound settings or in any other
+app's device list.
+
+### `onsite`: three things that are not code
+
 Three things decide whether a room recording is worth transcribing, and none of them
 is code.
 
@@ -145,10 +178,20 @@ before recording starts — "Automatisch", or 2 through 8. The answer goes into
 `meta.speakers.expected` and becomes the diarizer's lower and upper bound when the
 transcript is made. It is a hint, not a measurement.
 
-If the microphone is unplugged mid-recording, or the volume fills up, the recording
-ends by itself: the file is closed so that what was captured stays playable, the
-folder is marked `failed` with the reason in `meta.error`, and the menu says what
-happened.
+If the microphone is unplugged mid-recording, the audio hardware changes underneath a
+recording, or the volume fills up, the recording ends by itself: the file is closed so
+that what was captured stays playable, the folder is marked `failed` with the reason in
+`meta.error`, and the menu says what happened. An `online` recording survives a change
+it can be rebuilt around — the default input moving, a device changing its sample rate —
+by building a new tap and aggregate device within two seconds and continuing into the
+same file.
+
+Starting and stopping are both on a fifteen-second deadline. Nothing in Core Audio has a
+timeout of its own, and `coreaudiod` does occasionally get into a state where every call
+that opens an input blocks forever; without the deadline the menu would sit there
+refusing every start with "a recording is already running" until Steno was relaunched.
+Instead the folder is marked `failed`, the menu goes back to idle, and the reason says
+what actually fixes it: restart the Mac, or `sudo killall coreaudiod`.
 
 ## Settings
 
@@ -232,6 +275,13 @@ meeting, a click, or — where it is not the point — a microphone:
 # Record for 15 seconds through the real recorder, then quit. Leaves a meeting
 # folder with a real audio.wav and a real meta.json behind.
 open build/Build/Products/Debug/Steno.app --args --simulate-recording 15 onsite
+
+# An online recording: process tap plus microphone, two channels. With no meeting app
+# running this taps the whole system, so anything playing lands in channel 0.
+open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online
+
+# The same, with the tap forced at one app instead of whatever detection would pick.
+open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online --tap-target com.microsoft.teams2
 
 # The same flow with no hardware at all: folder and meta.json, no audio.
 open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
@@ -341,7 +391,7 @@ These are properties of the approach, not bugs to be papered over:
 |---|---|---|
 | M0 | Menu-bar skeleton + permission onboarding | **done** |
 | M1 | `onsite` audio + microphone-mode check | **done** |
-| M2 | `online` audio: process tap + aggregate device, 2-channel WAV | in progress |
+| M2 | `online` audio: process tap + aggregate device, 2-channel WAV | **done** |
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | planned |
 | M4 | Screenshots across all displays | planned |
 | M5 | ASR + diarization + merge | planned |

@@ -50,9 +50,13 @@ struct RecordingFolderNameTests {
 
     @Test("an online recording without an app name falls back to a label")
     func onlineWithoutAppName() {
-        #expect(RecordingFolderName.label(mode: .online, appName: nil) == "Meeting")
-        #expect(RecordingFolderName.label(mode: .online, appName: "") == "Meeting")
-        #expect(RecordingFolderName.label(mode: .online, appName: "···") == "Meeting")
+        // `Online`, not `Meeting`: an `online` recording with no identifiable app is
+        // a system-wide tap, and the folder name says what was recorded rather than
+        // inventing an app that was never found.
+        #expect(RecordingFolderName.unknownAppLabel == "Online")
+        #expect(RecordingFolderName.label(mode: .online, appName: nil) == "Online")
+        #expect(RecordingFolderName.label(mode: .online, appName: "") == "Online")
+        #expect(RecordingFolderName.label(mode: .online, appName: "···") == "Online")
     }
 
     @Test("pads single-digit date and time components")
@@ -204,8 +208,8 @@ struct RecordingFolderNameTests {
             ("2026-09-09_1430_Teams", true),
             ("2026-09-09_1430_Teams_Weekly-Sync", true),
             ("2026-09-09_1430_Teams_2", true),
-            ("2026-09-09_0000_Meeting", true),
-            ("2026-09-09_2359_Meeting", true),
+            ("2026-09-09_0000_Online", true),
+            ("2026-09-09_2359_Online", true),
             ("2026-09-09_1430", false),
             ("2026-09-09_1430_", false),
             ("2026-9-09_1430_Teams", false),

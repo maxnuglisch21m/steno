@@ -24,8 +24,9 @@ final class AppEnvironment {
     let coordinator: RecordingCoordinator
     let hotKeys: HotKeys
 
-    /// Where the coordinator gets a recorder from. The default gives `onsite` the real
-    /// `MicRecorder` (M1) and leaves `online` on `NullRecorder` until M2.
+    /// Where the coordinator gets a recorder from. The default gives `onsite`
+    /// `MicRecorder` (§3b) and `online` `ProcessTapRecorder` (§3a); the tests and
+    /// `--simulate-null-recording` substitute one that touches no hardware.
     let recorderFactory: any RecorderFactory
 
     init(

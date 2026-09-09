@@ -13,6 +13,8 @@ import StenoCore
 ///
 /// ```sh
 /// open build/Build/Products/Debug/Steno.app --args --simulate-recording 15 onsite
+/// open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online
+/// open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online --tap-target com.apple.Music
 /// open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
 /// open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 /// open build/Build/Products/Debug/Steno.app --args --open-settings
@@ -31,6 +33,10 @@ struct DebugLaunchArguments {
     /// read what the app sees, without a recording, is the only way to check it from
     /// the outside.
     var printMicrophoneMode = false
+    /// Bundle identifier the `online` tap must point at, instead of whatever is
+    /// actually in a meeting. The one way to aim the tap at a named app without
+    /// waiting for a real meeting to start.
+    var tapTargetBundleId: String?
 
     var isActive: Bool {
         openSettings || openOnboarding || printMicrophoneMode || simulate != nil
@@ -46,6 +52,9 @@ struct DebugLaunchArguments {
                 openOnboarding = true
             case "--print-microphone-mode":
                 printMicrophoneMode = true
+            case "--tap-target":
+                tapTargetBundleId = arguments[safe: index + 1]
+                index += 1
             case "--simulate-recording", "--simulate-null-recording":
                 useNullRecorder = arguments[index] == "--simulate-null-recording"
                 let seconds = Double(arguments[safe: index + 1] ?? "") ?? 3
@@ -120,6 +129,7 @@ struct DebugLaunchArguments {
         if useNullRecorder {
             environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
         }
+        environment.coordinator.forcedTapTargetBundleId = tapTargetBundleId
         Task { @MainActor in
             // The permission snapshot has to be in before `canStart` is asked, or the
             // simulation would refuse itself.
@@ -144,7 +154,10 @@ struct DebugLaunchArguments {
             // Wait for the stop path rather than guessing at it: with a real recorder
             // it has hardware to release and a file to close, and quitting underneath
             // that would leave exactly the truncated header M6 exists to repair.
-            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            // Longer than the coordinator's own stop deadline, so that a recorder
+            // that has to be given up on still gets its folder finished before the
+            // app quits.
+            let deadline = ContinuousClock.now.advanced(by: .seconds(20))
             while environment.appState.phase != .idle, ContinuousClock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(50))
             }
