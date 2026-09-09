@@ -278,7 +278,7 @@ struct AppStateTests {
         #expect(state.recordingStatusLine == nil)
 
         state.phase = .recording(mode: .onsite, started: Date().addingTimeInterval(-754))
-        let line = try? #require(state.recordingStatusLine)
+        let line = state.recordingStatusLine
         #expect(line?.contains(AppState.modeName(.onsite)) == true)
         #expect(line?.contains("12:3") == true)
 
