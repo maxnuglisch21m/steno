@@ -43,11 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// user's recording folder, register global hotkeys, mark the onboarding as seen,
     /// and pop the onboarding window — real side effects, on the machine running the
     /// tests, from tests that build their own state anyway.
-    private var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
-            || NSClassFromString("XCTestCase") != nil
-    }
+    private var isRunningTests: Bool { RunningEnvironment.isUnitTesting }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if isRunningTests {

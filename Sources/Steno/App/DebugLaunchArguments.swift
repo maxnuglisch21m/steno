@@ -16,6 +16,10 @@ import StenoCore
 /// open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online
 /// open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online --tap-target com.apple.Music
 /// open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
+///
+/// // M4: screenshots without audio, with one log line per gate decision.
+/// open build/Build/Products/Debug/Steno.app --args \
+///   --simulate-recording 30 onsite --null-recorder --screenshot-log
 /// open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 /// open build/Build/Products/Debug/Steno.app --args --open-settings
 /// open build/Build/Products/Debug/Steno.app --args --open-onboarding
@@ -46,6 +50,10 @@ struct DebugLaunchArguments {
     /// actually in a meeting. The one way to aim the tap at a named app without
     /// waiting for a real meeting to start.
     var tapTargetBundleId: String?
+    /// `--screenshot-log`: one log line per gate decision — display, active, changed
+    /// share, verdict. The only way to see why a frame was or was not kept without
+    /// reading the files afterwards and guessing.
+    var logsScreenshotDecisions = false
 
     // MARK: M3
 
@@ -113,6 +121,8 @@ struct DebugLaunchArguments {
                 index += 1
             case "--null-recorder":
                 useNullRecorder = true
+            case "--screenshot-log":
+                logsScreenshotDecisions = true
             case "--auto-stop":
                 autoStopDelay = Double(arguments[safe: index + 1] ?? "")
                 index += 1
@@ -203,6 +213,7 @@ struct DebugLaunchArguments {
             environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
         }
         environment.coordinator.forcedTapTargetBundleId = tapTargetBundleId
+        environment.coordinator.logsScreenshotDecisions = logsScreenshotDecisions
         Task { @MainActor in
             // The permission snapshot has to be in before `canStart` is asked, or the
             // simulation would refuse itself.
@@ -238,7 +249,8 @@ struct DebugLaunchArguments {
             let result = environment.appState.lastMeetingURL ?? folder
             let line = """
             steno-debug: simulated \(simulate.mode.rawValue) recording → \
-            \(result?.stenoPath ?? "nothing")\(Self.audioSummary(in: result))
+            \(result?.stenoPath ?? "nothing")\(Self.audioSummary(in: result))\
+            \(Self.screenshotSummary(in: result))
 
             """
             Log.app.notice("debug: \(line, privacy: .public)")
@@ -265,6 +277,7 @@ struct DebugLaunchArguments {
         if useNullRecorder {
             environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
         }
+        environment.coordinator.logsScreenshotDecisions = logsScreenshotDecisions
         if let autoStopDelay { settings.settings.autoStopDelay = autoStopDelay }
         if let injectedRule {
             // Ahead of the user's own rules, because first match wins and this run is
@@ -354,7 +367,7 @@ struct DebugLaunchArguments {
             Self.report(
                 """
                 detection simulation for \(app.bundleId) → \(folder?.stenoPath ?? "no recording")\
-                \(Self.audioSummary(in: folder))
+                \(Self.audioSummary(in: folder))\(Self.screenshotSummary(in: folder))
                 """
             )
             NSApp.terminate(nil)
@@ -388,6 +401,36 @@ struct DebugLaunchArguments {
             let size = attributes[.size] as? Int64
         else { return "" }
         return " · \(WAVWriter.fileName) \(size) bytes"
+    }
+
+    /// " · 14 screenshots on 2 display(s), 1.2 MB", or nothing when none were written.
+    ///
+    /// Read back off the index rather than off the capturer, so that what is reported
+    /// is what a downstream reader would find.
+    static func screenshotSummary(in folder: URL?) -> String {
+        guard
+            let folder,
+            let text = try? String(
+                contentsOf: folder.appendingPathComponent(ScreensIndexWriter.fileName),
+                encoding: .utf8
+            ),
+            let entries = try? ScreensIndexEntry.decode(jsonl: text, lenient: true),
+            !entries.isEmpty
+        else { return "" }
+
+        let displays = Set(entries.map(\.display)).sorted()
+        let active = entries.filter(\.active).count
+        var bytes = 0
+        for entry in entries {
+            let url = folder.appendingPathComponent(entry.file)
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.stenoPath)
+            bytes += (attributes?[.size] as? Int) ?? 0
+        }
+        return """
+             · \(entries.count) screenshots on display(s) \
+            \(displays.map(String.init).joined(separator: ",")) \
+            (\(active) active, \(bytes / 1024) KB)
+            """
     }
 }
 

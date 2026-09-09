@@ -115,6 +115,10 @@ final class AppEnvironment {
             },
             onLockChange: { [weak self] isLocked in
                 self?.appState.isScreenLocked = isLocked
+                // The recording carries on; only the screenshots pause (§4, plan
+                // addition). Told rather than observed, so the capturer has no reason
+                // to know about `AppState` at all.
+                self?.coordinator.setScreenLocked(isLocked)
             }
         )
         sleepLock.start()

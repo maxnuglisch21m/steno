@@ -13,6 +13,44 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **Screenshots across all displays (M4).** One `SCStream` per display at 1 fps,
+  `queueDepth 3`, cursor on, no audio, BGRA in sRGB, longer edge scaled to at most
+  1920 px. Only frames whose `SCStreamFrameInfo.status` is `.complete` (or `.started`,
+  the first frame of a stream) are candidates; `.idle` is ScreenCaptureKit saying the
+  display did not change, which is what replaces comparing images ourselves.
+- **The gate is the one from `StenoCore`.** `SCStreamFrameInfo.dirtyRects` become a
+  changed share through the new pure `DirtyRectMath.changedFraction(rects:frameSize:)`
+  — each rect clamped to the frame, areas summed as specification §4.4 asks, capped at
+  1.0 — and `ScreenshotGate` decides on that plus the elapsed time. 5 s / 2 % for a
+  normal display, 2 s / 0.5 % for the one holding the pointer, all five numbers
+  configurable, the anchor interval among them.
+- **Anchor frames that actually appear.** A display that never changes never produces a
+  stream frame, so the §4.6 anchor — one image per display at the start and every 120 s
+  — is taken out of band with `SCScreenshotManager` by a timer, and the same gate stops
+  the two paths from both saving the same moment.
+- **`screens/` and `screens.jsonl`.** JPEG at quality 0.8 through `CGImageDestination`,
+  named `HHmmss_d<index>[_active].jpg`, with `_2` upwards when two frames of one
+  display land in the same wall-clock second (`ScreensFileNamer`). The index line is
+  appended and flushed the moment the file is written, so a recording that was killed
+  still has an index for everything it saved. `meta.displays` is written when the
+  streams start and `meta.screenshots` when they stop.
+- **Own windows are never captured** (plan addition). The suggestion panel, settings,
+  and onboarding windows are excluded from every display's `SCContentFilter`, rebuilt
+  whenever one of them opens or closes and every ten seconds regardless.
+- **A locked screen pauses capture** (plan addition). Frames are discarded while
+  `com.apple.screenIsLocked` is in force; the streams stay up, so unlocking resumes
+  immediately, and the audio never stops.
+- **Display hot-plug.** `didChangeScreenParametersNotification` starts streams for
+  displays that appeared and stops the ones that went away. Indices are never
+  renumbered — the file names and the index already point at them.
+- **`scripts/verify-recording.sh <folder>`** checks a finished meeting folder against
+  specification §11.8 and §11.11: every index line parses, every `file` exists and
+  agrees with its own name, no two images of a display are closer than the configured
+  interval (`--interval` / `--active-interval`), every display has an anchor near the
+  start, `meta.screenshots` matches the line count, and nothing was written into the
+  folder that does not belong there. Bash plus stdlib Python, nothing to install.
+- **`--screenshot-log`**, debug builds only: one log line per gate decision — display,
+  active, changed share, verdict.
 - **Meeting detection (M3).** `MeetingDetector` watches Core Audio's process list and
   the `IsRunningInput` property of every audio process — event-driven through
   `AudioObjectAddPropertyListenerBlock`, with a two-second poll as the fallback when
@@ -200,6 +238,15 @@ release notes, and fails if it is missing.
 
 ### Changed
 
+- Screenshots are captured in **both** modes, `onsite` included (specification §1): the
+  screen rarely changes in a room, so it costs almost nothing.
+- Nothing about screenshots can fail a recording. A missing Screen Recording
+  permission, a display that refuses to start, a stream that stops mid-meeting (it gets
+  one restart after 2 s), or a disk that fills up all end as a log line and a meeting
+  that still has its audio.
+- The app-hosted test bundle no longer starts a capture. `RecordingCoordinator` is
+  driven end to end by its tests, and photographing the screen of whoever runs
+  `make test` is not something a test may do.
 - The folder label for an `online` recording with no identifiable app is now
   `Online` rather than `Meeting` (`StenoCore.RecordingFolderName.unknownAppLabel`):
   such a recording is a system-wide tap, and the name says what was recorded.

@@ -39,7 +39,8 @@ public struct ScreensIndexEntry: Codable, Sendable, Hashable {
         display: Int,
         active: Bool,
         changed: Double,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        sequence: Int = 1
     ) {
         self.init(
             t: t,
@@ -47,8 +48,26 @@ public struct ScreensIndexEntry: Codable, Sendable, Hashable {
                 capturedAt: capturedAt,
                 display: display,
                 active: active,
-                timeZone: timeZone
+                timeZone: timeZone,
+                sequence: sequence
             ),
+            display: display,
+            active: active,
+            changed: changed
+        )
+    }
+
+    /// Builds an entry around a file name that has already been made unique.
+    public init(
+        t: TimeInterval,
+        fileName: String,
+        display: Int,
+        active: Bool,
+        changed: Double
+    ) {
+        self.init(
+            t: t,
+            file: Self.directoryName + "/" + fileName,
             display: display,
             active: active,
             changed: changed
@@ -58,17 +77,26 @@ public struct ScreensIndexEntry: Codable, Sendable, Hashable {
     // MARK: - File names
 
     /// `HHmmss_d<index>[_active].jpg` — for example `143012_d1_active.jpg`.
+    ///
+    /// - Parameter sequence: which frame of that display this is within the same
+    ///   wall-clock second. `1` is the first and carries no suffix; a second frame in
+    ///   the same second becomes `143012_d1_active_2.jpg`. The clock only has a
+    ///   second's resolution and a display is captured at 1 fps, so a collision needs
+    ///   a frame arriving just either side of a second boundary — rare, and silently
+    ///   overwriting the earlier image would lose a screenshot the index still names.
     public static func fileName(
         capturedAt: Date,
         display: Int,
         active: Bool,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        sequence: Int = 1
     ) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let c = calendar.dateComponents([.hour, .minute, .second], from: capturedAt)
         let clock = String(format: "%02d%02d%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
-        return "\(clock)_d\(display)\(active ? "_active" : "").jpg"
+        let suffix = sequence > 1 ? "_\(sequence)" : ""
+        return "\(clock)_d\(display)\(active ? "_active" : "")\(suffix).jpg"
     }
 
     /// The same name, prefixed with `screens/` as it appears in the index.
@@ -76,13 +104,15 @@ public struct ScreensIndexEntry: Codable, Sendable, Hashable {
         capturedAt: Date,
         display: Int,
         active: Bool,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        sequence: Int = 1
     ) -> String {
         directoryName + "/" + fileName(
             capturedAt: capturedAt,
             display: display,
             active: active,
-            timeZone: timeZone
+            timeZone: timeZone,
+            sequence: sequence
         )
     }
 

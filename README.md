@@ -196,6 +196,70 @@ refusing every start with "a recording is already running" until Steno was relau
 Instead the folder is marked `failed`, the menu goes back to idle, and the reason says
 what actually fixes it: restart the Mac, or `sudo killall coreaudiod`.
 
+## Screenshots
+
+Every display is captured for the length of the recording, in both modes — `onsite`
+included, where the screen rarely changes and therefore costs almost nothing.
+
+**Event-driven, not on a timer.** Each display gets its own `SCStream` at one frame a
+second. ScreenCaptureKit reports a frame status of `.idle` for a display that did not
+change, which is what replaces comparing images: Steno never decodes a frame it is not
+going to keep. The frames that are left carry the compositor's dirty rectangles, whose
+summed area over the frame area is the changed share.
+
+A frame becomes a file only when **both** the interval and the change threshold are
+met:
+
+| | Normal display | Display holding the pointer |
+|---|---|---|
+| Minimum since the last image | 5 s | 2 s |
+| Changed area | ≥ 2 % | ≥ 0.5 % |
+
+The display holding the pointer is worked out from `NSEvent.mouseLocation` against the
+screen list, freshly for every candidate frame — that is where the meeting is actually
+happening, so it gets the shorter interval and the lower threshold. All five numbers
+are in **Einstellungen → Screenshots**.
+
+**Anchor frames.** Every display also gets one image at the start and one every 120 s
+regardless of what changed, so a static second monitor is not simply absent from an
+hour-long meeting. Those cannot come from the stream — a display that never changes
+never produces a frame — so an overdue display is captured out of band with
+`SCScreenshotManager`, and the same gate decides whether to keep it.
+
+Images are JPEG, quality 0.8, longer edge at most 1920 px, named
+`HHmmss_d<index>[_active].jpg` in `screens/`. Two frames of one display inside the same
+wall-clock second get `_2`, `_3` appended, because the index already names both.
+`screens.jsonl` gets its line the moment the file is written and is flushed straight
+away, so a recording that was killed still has an index for everything it managed to
+save. The full format is in [docs/FORMAT.md](docs/FORMAT.md).
+
+### Privacy
+
+- **Steno's own windows are never in a screenshot.** The suggestion panel, the settings
+  window, and the onboarding window are excluded from every display's content filter,
+  which is rebuilt whenever one of them opens or closes. A recorder that photographs
+  its own popup is both useless and a small leak, and the panel is on screen exactly
+  when something interesting is happening.
+- **A locked screen is not captured.** While the Mac is locked, frames are discarded —
+  the audio keeps recording, which is correct for a meeting that carries on, but two
+  hundred images of the lock wallpaper are two hundred images of nothing. The streams
+  are left running, so unlocking resumes immediately.
+- Nothing is analysed. No OCR, no thumbnails, no upload — the images are scaled and
+  encoded, and that is all.
+- Without the Screen Recording permission, a recording simply has no screenshots and
+  says so in the log. It is never a reason to lose the audio, and neither is a display
+  that refuses to start, a stream that stops mid-meeting (it gets one restart), or a
+  disk that fills up.
+
+Displays plugged in or unplugged mid-meeting are handled: a new one is appended to
+`meta.displays` and starts producing images, a removed one stops. **Indices are never
+renumbered**, because the file names and `screens.jsonl` already point at them.
+
+`scripts/verify-recording.sh <folder>` checks a finished folder against all of this —
+every index line parses, every file exists, no two images of a display are closer than
+the configured interval, `meta.screenshots` matches the line count, and nothing was
+written into the folder that does not belong there.
+
 ## Detection, rules, and the suggestion
 
 An `online` recording usually starts itself. The signal is Core Audio and nothing
@@ -266,8 +330,9 @@ recording before the machine suspends — capture is about to end whether Steno 
 or not, and a folder that says `"stopReason": "sleep"` is worth far more than audio
 that stops mid-sentence behind a header that was never finished. The lock screen
 (`com.apple.screenIsLocked`) does not touch audio — a locked Mac keeps recording the
-meeting — but it is remembered, so M4's screenshots do not fill a folder with two
-hundred pictures of the lock wallpaper.
+meeting — but the screenshot capturer is told, and discards frames until the screen
+is unlocked rather than filling a folder with two hundred pictures of the lock
+wallpaper.
 
 **Notifications.** A recording that fails posts one, with an "Im Finder zeigen"
 action; a finished transcript will, from M5. Permission for them is asked for in
@@ -381,6 +446,11 @@ open build/Build/Products/Debug/Steno.app --args \
   --simulate-detection com.microsoft.teams2 "Weekly Sync" \
   --rule never Weekly --null-recorder
 
+# Screenshots on their own: no audio, and one log line per gate decision — display,
+# active, changed share, verdict.
+open build/Build/Products/Debug/Steno.app --args \
+  --simulate-recording 30 onsite --null-recorder --screenshot-log
+
 # Print the microphone mode Steno sees, and what the on-site gate makes of it.
 open build/Build/Products/Debug/Steno.app --args --print-microphone-mode
 
@@ -393,6 +463,7 @@ without looking at the screen:
 
 ```sh
 log stream --predicate 'subsystem == "de.21m.steno" && category == "audio"'
+log stream --predicate 'subsystem == "de.21m.steno" && category == "screens"'
 ```
 
 They are compiled out of release builds: a shipped app has no business taking
@@ -408,7 +479,8 @@ Sources/Steno/              the app: App · Audio · Detection · Screenshots ·
                             Transcription · Storage · Settings · System · Update
 Config/Steno.entitlements   audio input; not sandboxed
 Tests/StenoTests/           thin app-hosted tests
-scripts/                    changelog-extract.sh (release helpers follow in M7)
+scripts/                    verify-recording.sh (specification §11.8/§11.11) ·
+                            changelog-extract.sh (release helpers follow in M7)
 docs/SPEC.md                the specification this implements
 docs/FORMAT.md              the on-disk contract downstream tools read
 ThirdPartyLicenses/         FluidAudio (Apache-2.0) · Sparkle (MIT)
@@ -488,7 +560,7 @@ These are properties of the approach, not bugs to be papered over:
 | M1 | `onsite` audio + microphone-mode check | **done** |
 | M2 | `online` audio: process tap + aggregate device, 2-channel WAV | **done** |
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | **done** |
-| M4 | Screenshots across all displays | planned |
+| M4 | Screenshots across all displays | **done** |
 | M5 | ASR + diarization + merge | planned |
 | M6 | Crash and interruption robustness | planned |
 | M7 | Release pipeline and in-app updates | planned |

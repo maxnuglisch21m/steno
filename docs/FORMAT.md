@@ -12,7 +12,7 @@ format:
 |---|---|
 | `meta.json` | `MeetingMeta`, `MeetingState`, `MeetingMode`, `MeetingChannel`, `MeetingTrigger`, `AudioInputInfo`, `SpeakerHint`, `DisplayInfo`, `ModelIdentifiers` |
 | folder name | `RecordingFolderName` |
-| `screens.jsonl` | `ScreensIndexEntry` |
+| `screens.jsonl` | `ScreensIndexEntry`, `ScreensFileNamer`, `DirtyRectMath` |
 | `transcript.json` | `Transcript`, `Utterance`, `Token`, `DiarSegment`, `ModelIdentifiers` |
 | `transcript.md` | `TranscriptMarkdownFormatter` |
 
@@ -100,7 +100,7 @@ is what makes the file readable next to the folder name.
 | `trigger` | object | `{"kind":"manual"}` or `{"kind":"auto",…}`, either of which may carry `bundleId` and `name`. See below. |
 | `channels` | array | `["room"]` for `onsite`, `["system","mic"]` for `online`, in channel order. |
 | `input` | object | `{"device": string, "microphoneMode": string \| absent}`. See below. |
-| `displays` | array | `[{"index":0,"id":1,"px":[3840,2160]}, …]`, in the order the screenshot file names use. |
+| `displays` | array | `[{"index":0,"id":1,"px":[3840,2160]}, …]`, in the order the screenshot file names use. `px` is the display's real backing pixels, not points, and not the size the images were scaled to. `id` is the `CGDirectDisplayID` at recording time and is not stable across reboots. |
 | `screenshots` | integer | Number of images written, i.e. lines in `screens.jsonl`. |
 | `app` | string | Steno's marketing version. |
 | `state` | string | See the lifecycle below. |
@@ -367,12 +367,23 @@ passed, with the display holding the pointer on shorter intervals and a lower
 threshold. Each display additionally gets an anchor frame at the start and then every
 120 seconds regardless of change, so a static monitor is not simply absent.
 
-File names: `HHmmss_d<index>[_active].jpg`, e.g. `143012_d1_active.jpg`.
+Steno's own windows — the suggestion panel, settings, onboarding — are excluded from
+every capture, and while the screen is locked no frames are written at all.
 
-- `HHmmss` is the local wall clock at capture.
-- `<index>` matches `meta.displays[].index`.
+File names: `HHmmss_d<index>[_active][_<n>].jpg`, e.g. `143012_d1_active.jpg`.
+
+- `HHmmss` is the local wall clock at capture, in the time zone the recording was made
+  in. The instant is `meta.started` plus the entry's `t`.
+- `<index>` matches `meta.displays[].index`. Indices are assigned in the order
+  ScreenCaptureKit lists the displays and are **never renumbered**: a display unplugged
+  mid-meeting keeps its index and a new one is appended.
 - `_active` marks the display that held the pointer.
-- JPEG, quality 0.8 by default, longer edge ≤ 1920 px by default.
+- `_<n>` is a collision suffix, `_2` upwards, and appears only when two frames of the
+  same display fall inside the same wall-clock second. The clock has a second's
+  resolution, so without it the second image would overwrite the first while the index
+  went on naming both. A reader should not read anything into it beyond ordering.
+- JPEG, quality 0.8 by default, longer edge ≤ 1920 px by default. The image is scaled
+  and encoded and nothing else — no cropping, no annotation, no OCR.
 
 `screens.jsonl` has one JSON object per line, appended the moment the image is
 written — not assembled at the end, so an interrupted recording still has an index for
@@ -384,14 +395,26 @@ every file it managed to write.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `t` | number | Seconds since the start of the recording, two decimals. |
+| `t` | number | Seconds since `meta.started`, two decimals. |
 | `file` | string | Path relative to the meeting folder, including the `screens/` prefix. |
 | `display` | integer | Matches `meta.displays[].index`. |
 | `active` | boolean | Whether this display held the pointer. |
 | `changed` | number | Share of the display area that changed, 0…1, two decimals. |
 
-Key order is fixed and the two numbers carry two decimals, so the lines are stable and
-readable rather than a binary round trip of a `Double`.
+Key order is fixed and the two numbers carry two decimals — half-even rounding, as
+`%.2f` does it — so the lines are stable and readable rather than a binary round trip
+of a `Double`. Two decimals is also the tolerance a reader should allow when checking
+that two images of one display are no closer than the configured interval.
+
+`t` is measured from `meta.started`, at the moment the frame was handled rather than at
+the sample buffer's presentation time. The two differ by the capture queue's latency,
+single-digit milliseconds at one frame a second, which is well inside the two decimals
+the field carries.
+
+`changed` is the **sum** of the frame's dirty rectangles over the frame area, each
+clamped to the frame and the total capped at 1.0 — not their union. Overlapping damage
+regions therefore read slightly high, which biases towards keeping a frame. It is `0`
+for an anchor frame, which is kept regardless of what changed.
 
 `t` is the bridge: it is how a reader lines a screenshot up against a transcript line,
 whose `start` is measured from the same zero.

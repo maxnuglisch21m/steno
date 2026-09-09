@@ -120,6 +120,14 @@ final class RecordingCoordinator {
     /// The recorder of the running recording. Opened per recording, because holding a
     /// microphone between meetings is both wasteful and visible in the menu bar.
     private var recorder: (any AudioRecorder)?
+    /// Screenshots of every display, for the length of the recording (§4). Both modes:
+    /// specification §1 records them for `onsite` too, because the screen rarely
+    /// changes there and it therefore costs almost nothing.
+    private let capturer = ScreenshotCapturer()
+    /// Starting the streams takes a moment — one `SCShareableContent` fetch — and the
+    /// recording does not wait for it. This is what the stop waits on instead, so that
+    /// `meta.displays` is written before `meta.json` is finished.
+    private var screenshotStartTask: Task<Void, Never>?
     /// The low-space alert is shown once per launch, not once per recording.
     private var hasWarnedAboutDiskSpace = false
 
@@ -179,6 +187,10 @@ final class RecordingCoordinator {
         recorderStartTimeout = start
         recorderStopTimeout = stop
     }
+
+    /// Logs every screenshot gate decision — display, active, changed share, verdict.
+    /// `--screenshot-log`, and nothing else, sets this.
+    var logsScreenshotDecisions = false
     #endif
 
     // MARK: - May we?
@@ -431,6 +443,9 @@ final class RecordingCoordinator {
 
         session = newSession
         recorder = newRecorder
+        // Right after the recorder: the screenshots belong to the same recording, and
+        // nothing about them may hold up or fail the audio.
+        startScreenshots(session: newSession, started: started)
         recordingBundleId = resolvedTrigger.bundleId ?? tapTarget.bundleId
         pendingStopReason = .manual
         appState.recordingAppName = mode == .online ? resolvedAppName : nil
@@ -492,6 +507,57 @@ final class RecordingCoordinator {
         }
     }
 
+    // MARK: - Screenshots
+
+    /// Starts capturing every display, and writes `meta.displays` when it knows what
+    /// they are.
+    ///
+    /// Deliberately not awaited by the caller: opening the streams takes a fetch of
+    /// `SCShareableContent` and a start per display, and a recording that waited for
+    /// that would begin its audio a fraction of a second late for no benefit. Nothing
+    /// in here can fail the recording — a missing Screen Recording permission, a
+    /// display that refuses, a full disk all end as a log line and no images.
+    private func startScreenshots(session: RecordingSession, started: Date) {
+        var logsDecisions = false
+        #if DEBUG
+        logsDecisions = logsScreenshotDecisions
+        #endif
+        let configuration = ScreenshotCaptureConfiguration(
+            settings: settings.settings,
+            logsDecisions: logsDecisions
+        )
+        let isScreenLocked = appState.isScreenLocked
+        screenshotStartTask = Task { [weak self] in
+            guard let self else { return }
+            let displays = await self.capturer.start(
+                folder: session.folder,
+                started: started,
+                configuration: configuration,
+                isScreenLocked: isScreenLocked
+            )
+            guard !displays.isEmpty else { return }
+            // The stop awaits this task before it touches `meta.json`, so this write
+            // can never land after the one that finishes the recording.
+            try? session.update { $0.displays = displays }
+        }
+    }
+
+    /// Stops the streams and answers with the number of images written, which is what
+    /// `meta.screenshots` is.
+    private func stopScreenshots() async -> Int {
+        // A recording stopped within the second it started may still be opening its
+        // streams; letting that finish is what keeps `meta.displays` honest.
+        await screenshotStartTask?.value
+        screenshotStartTask = nil
+        return await capturer.stop()
+    }
+
+    /// The screen locked or unlocked. Audio does not care; screenshots do — two
+    /// hundred images of the lock wallpaper are two hundred images of nothing.
+    func setScreenLocked(_ isLocked: Bool) {
+        capturer.setScreenLocked(isLocked)
+    }
+
     // MARK: - Stopping
 
     /// Stops the recording and moves the folder through `transcribing` to `done`.
@@ -543,6 +609,11 @@ final class RecordingCoordinator {
         self.recorder = nil
 
         let ended = Date()
+        // Before the recorder's own stop, which may take seconds: the streams are
+        // independent of the audio hardware and there is nothing to gain from a few
+        // more frames of a meeting that is already over.
+        let screenshots = await stopScreenshots()
+
         var outcome: AudioRecorderOutcome?
         var stopTimedOut = false
         if let stopping {
@@ -561,7 +632,7 @@ final class RecordingCoordinator {
         }
 
         if stopTimedOut {
-            finishAfterStopTimeout(session: session, ended: ended)
+            finishAfterStopTimeout(session: session, ended: ended, screenshots: screenshots)
             return
         }
 
@@ -571,6 +642,7 @@ final class RecordingCoordinator {
         do {
             try session.update { meta in
                 meta.finishCapture(at: ended, reason: reason)
+                meta.screenshots = screenshots
                 if let outcome {
                     meta.channels = outcome.channels
                     meta.audio = outcome.audioFileName
@@ -619,13 +691,14 @@ final class RecordingCoordinator {
     /// the folder does *not* get is `done` — nothing here knows whether the recording
     /// is complete, and a folder that says `failed` with a reason is worth more than
     /// one that claims a clean ending it cannot vouch for.
-    private func finishAfterStopTimeout(session: RecordingSession, ended: Date) {
+    private func finishAfterStopTimeout(session: RecordingSession, ended: Date, screenshots: Int) {
         let audio = session.folder.appendingPathComponent(WAVWriter.fileName)
         let hasAudio = FileManager.default.fileExists(atPath: audio.stenoPath)
         let mode = session.meta.mode
         let stopReason = pendingStopReason
         try? session.update { meta in
             meta.finishCapture(at: ended, reason: stopReason)
+            meta.screenshots = screenshots
             meta.channels = mode.channels
             meta.audio = hasAudio ? WAVWriter.fileName : nil
         }
@@ -658,6 +731,13 @@ final class RecordingCoordinator {
     /// it — claiming a clean ending for a recording that was cut off mid-sentence
     /// would be worse than saying plainly that it was.
     func prepareForTermination() {
+        // First and synchronously: `screens.jsonl` must be flushed and closed even
+        // when there is no recorder to wait for, because a folder whose last index
+        // line is half-written is worse than one line short.
+        screenshotStartTask?.cancel()
+        screenshotStartTask = nil
+        capturer.prepareForTermination()
+
         guard let stopping = recorder else { return }
         recorder = nil
         Log.audio.notice("quitting while recording; releasing the audio hardware")
@@ -705,11 +785,13 @@ final class RecordingCoordinator {
                 outcome = await Deadline.run(deadline) { try await stopping.stop() }.value
             }
             guard let self else { return }
+            let screenshots = await self.stopScreenshots()
             self.finishInterrupted(
                 session: session,
                 reason: reason,
                 ended: ended,
-                outcome: outcome
+                outcome: outcome,
+                screenshots: screenshots
             )
         }
     }
@@ -718,10 +800,12 @@ final class RecordingCoordinator {
         session: RecordingSession,
         reason: AudioInterruptionReason,
         ended: Date,
-        outcome: AudioRecorderOutcome?
+        outcome: AudioRecorderOutcome?,
+        screenshots: Int
     ) {
         try? session.update { meta in
             meta.finishCapture(at: ended, reason: reason.stopReason)
+            meta.screenshots = screenshots
             if let outcome {
                 meta.channels = outcome.channels
                 meta.audio = outcome.audioFileName
