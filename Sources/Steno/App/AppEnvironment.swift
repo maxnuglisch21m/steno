@@ -1,0 +1,124 @@
+import Foundation
+import Observation
+import StenoCore
+
+/// The objects that make up one running Steno, wired together once.
+///
+/// A menu-bar app has no window hierarchy to hang dependencies off: the status item,
+/// the settings window, the onboarding window, the hotkey handler, and the app
+/// delegate all need the same five objects, and none of them owns the others. So they
+/// are constructed here and reached through `shared`.
+///
+/// Everything in it is `@MainActor`, which is what makes that safe: there is one
+/// instance, on one actor, for the life of the process.
+@MainActor
+final class AppEnvironment {
+    static let shared = AppEnvironment()
+
+    let settings: SettingsStore
+    let appState: AppState
+    let store: RecordingStore
+    let models: ModelManager
+    let permissions: PermissionMonitor
+    let inputDevices: AudioInputDeviceList
+    let coordinator: RecordingCoordinator
+    let hotKeys: HotKeys
+
+    /// The recorder the coordinator drives. `NullRecorder` until M1 and M2 land the
+    /// real ones behind the same protocol.
+    let recorder: any AudioRecorder
+
+    init(
+        settings: SettingsStore = SettingsStore(),
+        recorder: (any AudioRecorder)? = nil
+    ) {
+        self.settings = settings
+        self.appState = AppState()
+        self.store = RecordingStore()
+        self.models = ModelManager(asrVersion: settings.settings.asrVersion)
+        self.inputDevices = AudioInputDeviceList()
+        self.recorder = recorder ?? NullRecorder()
+
+        let models = self.models
+        self.permissions = PermissionMonitor(modelsInstalled: { models.isInstalled })
+
+        self.coordinator = RecordingCoordinator(
+            appState: appState,
+            settings: settings,
+            store: store,
+            recorder: self.recorder
+        )
+        self.hotKeys = HotKeys()
+    }
+
+    // MARK: - Launch
+
+    /// Everything that has to happen once, at launch.
+    func start() {
+        settings.syncLaunchAtLogin()
+        models.asrVersion = settings.settings.asrVersion
+
+        _ = store.ensureRootExists(settings.rootFolderURL)
+        appState.lastMeetingURL = store.lastMeetingURL(in: settings.rootFolderURL)
+
+        permissions.observeActivation()
+        inputDevices.startObserving()
+
+        hotKeys.register { [weak self] action in
+            self?.handle(action)
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            await self.permissions.refresh()
+            self.appState.permissions = self.permissions.snapshot
+            self.observePermissions()
+        }
+    }
+
+    /// Undone on quit, so the hotkeys and the ticker do not outlive the app.
+    func stop() {
+        hotKeys.unregister()
+        permissions.stopPeriodicRefresh()
+        appState.stopTicker()
+    }
+
+    func handle(_ action: HotKeys.Action) {
+        switch action {
+        case .startOnline: coordinator.startOnline()
+        case .startOnsite: coordinator.startOnsite()
+        case .stop: coordinator.stop()
+        }
+    }
+
+    /// Mirrors the permission snapshot into `AppState`, which is what the menu reads.
+    ///
+    /// `withObservationTracking` fires once per change, so it re-arms itself. Cheaper
+    /// and more direct than a Combine pipeline for one value.
+    private func observePermissions() {
+        withObservationTracking {
+            _ = permissions.snapshot
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.appState.permissions = self.permissions.snapshot
+                self.observePermissions()
+            }
+        }
+    }
+
+    // MARK: - Root folder
+
+    /// Points the recording root somewhere else and brings everything in line.
+    func changeRootFolder(to url: URL) {
+        settings.setRootFolder(url)
+        _ = store.ensureRootExists(url)
+        appState.lastMeetingURL = store.lastMeetingURL(in: url)
+    }
+
+    /// Re-reads which meeting is the newest. Called after a recording finishes and
+    /// when the menu opens, because the user may have moved folders around.
+    func refreshLastMeeting() {
+        appState.lastMeetingURL = store.lastMeetingURL(in: settings.rootFolderURL)
+    }
+}

@@ -197,6 +197,70 @@ struct RecordingFolderNameTests {
         #expect(name != "2026-09-09_1430_Vorort")
     }
 
+    @Test(
+        "recognizes its own names again and nothing else",
+        arguments: [
+            ("2026-09-09_1430_Vorort", true),
+            ("2026-09-09_1430_Teams", true),
+            ("2026-09-09_1430_Teams_Weekly-Sync", true),
+            ("2026-09-09_1430_Teams_2", true),
+            ("2026-09-09_0000_Meeting", true),
+            ("2026-09-09_2359_Meeting", true),
+            ("2026-09-09_1430", false),
+            ("2026-09-09_1430_", false),
+            ("2026-9-09_1430_Teams", false),
+            ("2026-13-09_1430_Teams", false),
+            ("2026-09-32_1430_Teams", false),
+            ("2026-09-09_2460_Teams", false),
+            ("2026-09-09_1470_Teams", false),
+            ("Screenshots", false),
+            ("", false),
+            (".DS_Store", false),
+            ("_work", false)
+        ]
+    )
+    func recognisesOwnNames(name: String, isRecording: Bool) {
+        #expect(RecordingFolderName.matches(name) == isRecording)
+    }
+
+    @Test("every name it produces is a name it recognizes")
+    func roundTripsThroughMatching() {
+        let names = [
+            RecordingFolderName.baseName(started: Self.started, mode: .onsite, timeZone: Self.berlin),
+            RecordingFolderName.baseName(
+                started: Self.started,
+                mode: .online,
+                appName: "Teams",
+                title: "Weekly Sync",
+                timeZone: Self.berlin
+            ),
+            RecordingFolderName.baseName(started: Self.started, mode: .online, timeZone: Self.berlin)
+        ]
+        for name in names {
+            #expect(RecordingFolderName.matches(name), "\(name) should be recognized")
+        }
+    }
+
+    @Test("reads the start time back out of a name, to the minute")
+    func readsStartTimeBack() {
+        let date = RecordingFolderName.startedDate(
+            from: "2026-09-09_1430_Teams_Weekly-Sync",
+            timeZone: Self.berlin
+        )
+        // The name carries no seconds, so it lands on the minute the recording began.
+        #expect(date == Self.started.addingTimeInterval(-12))
+        #expect(RecordingFolderName.startedDate(from: "nope", timeZone: Self.berlin) == nil)
+    }
+
+    @Test("reads the label back out of a name")
+    func readsLabelBack() {
+        #expect(RecordingFolderName.label(fromFolderName: "2026-09-09_1430_Vorort") == "Vorort")
+        #expect(
+            RecordingFolderName.label(fromFolderName: "2026-09-09_1430_Teams_Weekly-Sync") == "Teams"
+        )
+        #expect(RecordingFolderName.label(fromFolderName: "screens") == nil)
+    }
+
     @Test("the produced name is safe as a single path component")
     func namesArePathSafe() {
         let names = [

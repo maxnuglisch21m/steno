@@ -1,30 +1,1590 @@
 {
-  "sourceLanguage" : "de",
-  "strings" : {
-    "Beenden" : {
-      "comment" : "Menu bar item that quits Steno.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quit"
+  "sourceLanguage": "de",
+  "strings": {
+    "%.1f %%": {
+      "comment": "Percentage value next to a screenshot change-threshold slider.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.1f %%"
           }
         }
       }
     },
-    "Steno" : {
-      "comment" : "Accessibility label of the menu bar item. The app name is the same in every language.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steno"
+    "%d px": {
+      "comment": "Pixel value next to the maximum image edge stepper.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d px"
+          }
+        }
+      }
+    },
+    "%d s": {
+      "comment": "Seconds value next to a stepper.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d s"
+          }
+        }
+      }
+    },
+    "AAC (m4a) — klein": {
+      "comment": "Audio archive format option.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AAC (m4a) — small"
+          }
+        }
+      }
+    },
+    "ASR-Version": {
+      "comment": "Settings label: which Parakeet checkpoint to use.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech model version"
+          }
+        }
+      }
+    },
+    "Ablageordner": {
+      "comment": "Settings label: the root folder recordings go into.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording folder"
+          }
+        }
+      }
+    },
+    "Allgemein": {
+      "comment": "Settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        }
+      }
+    },
+    "Anker-Frame-Intervall": {
+      "comment": "Settings label: how often a display is captured regardless of change.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anchor frame interval"
+          }
+        }
+      }
+    },
+    "Audio-Archivformat": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio archive format"
+          }
+        }
+      }
+    },
+    "Auf Vorgaben zurücksetzen": {
+      "comment": "Button that restores the default watchlist.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to defaults"
+          }
+        }
+      }
+    },
+    "Aufgenommen wird immer verlustfreies WAV. Umgewandelt wird erst, wenn das Transkript steht — die Qualität der Erkennung hängt also nicht daran.": {
+      "comment": "Explains the archive format setting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording is always lossless WAV. Conversion happens only after the transcript is written, so recognition quality does not depend on this."
+          }
+        }
+      }
+    },
+    "Aufnahme": {
+      "comment": "Settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording"
+          }
+        }
+      }
+    },
+    "Aufnahme läuft · %@ · %@": {
+      "comment": "Non-interactive status line at the top of the menu: mode, then mm:ss.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording · %@ · %@"
+          }
+        }
+      }
+    },
+    "Aufnahme stoppen": {
+      "comment": "Menu item, only shown while recording.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop recording"
+          }
+        }
+      }
+    },
+    "Aus „Weekly Sync“ wird 2026-09-09_1430_Teams_Weekly-Sync.": {
+      "comment": "Example for the title-in-folder-name setting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Weekly Sync” becomes 2026-09-09_1430_Teams_Weekly-Sync."
+          }
+        }
+      }
+    },
+    "Auswählen": {
+      "comment": "Confirmation button of the folder picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        }
+      }
+    },
+    "Auswählen …": {
+      "comment": "Button that opens the folder picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose…"
+          }
+        }
+      }
+    },
+    "Auto-Stop-Verzögerung": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-stop delay"
+          }
+        }
+      }
+    },
+    "Automatisch nach Updates suchen": {
+      "comment": "Settings toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for updates automatically"
+          }
+        }
+      }
+    },
+    "Beenden": {
+      "comment": "Menu bar item that quits Steno.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit"
+          }
+        }
+      }
+    },
+    "Bei der Anmeldung starten": {
+      "comment": "Settings toggle for the login item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start at login"
+          }
+        }
+      }
+    },
+    "Berechtigung fehlt: %@": {
+      "comment": "Why a recording cannot start; %@ is the permission name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permission missing: %@"
+          }
+        }
+      }
+    },
+    "Bildschirmaufnahme": {
+      "comment": "Permission name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen recording"
+          }
+        }
+      }
+    },
+    "Bundle-ID": {
+      "comment": "Watchlist table column and text field placeholder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bundle ID"
+          }
+        }
+      }
+    },
+    "Das Display mit dem Mauszeiger wird häufiger gesichert — dort passiert das Meeting.": {
+      "comment": "Explains the two screenshot intervals.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The display holding the pointer is captured more often — that is where the meeting is happening."
+          }
+        }
+      }
+    },
+    "Das ist keine Bundle-ID. Erwartet wird etwas wie com.microsoft.teams2.": {
+      "comment": "Validation error when adding a watchlist entry.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That is not a bundle ID. Something like com.microsoft.teams2 is expected."
+          }
+        }
+      }
+    },
+    "Das letzte Meeting wird noch verarbeitet.": {
+      "comment": "Why a recording cannot start.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The last meeting is still being processed."
+          }
+        }
+      }
+    },
+    "Der Ablageordner „%@“ ließ sich nicht anlegen: %@": {
+      "comment": "Error; first %@ is the path, second the system reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The recording folder “%@” could not be created: %@"
+          }
+        }
+      }
+    },
+    "Der Meeting-Ordner ließ sich nicht anlegen: %@": {
+      "comment": "Error; %@ is the system reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The meeting folder could not be created: %@"
+          }
+        }
+      }
+    },
+    "Der Modell-Download kommt mit der Transkription (M5).": {
+      "comment": "Error thrown by the not-yet-implemented download.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model download arrives with transcription (M5)."
+          }
+        }
+      }
+    },
+    "Ein Grenzflächenmikrofon auf dem Tisch ist der wirksamste Hebel für die Qualität einer Raumaufnahme.": {
+      "comment": "Explains the input device picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A boundary microphone on the table is the most effective lever there is for room recording quality."
+          }
+        }
+      }
+    },
+    "Eingabegerät (Vor Ort)": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input device (on site)"
+          }
+        }
+      }
+    },
+    "Einstellungen …": {
+      "comment": "Menu item that opens the settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings…"
+          }
+        }
+      }
+    },
+    "Entfernen": {
+      "comment": "Button that removes the selected watchlist entries.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        }
+      }
+    },
+    "Es läuft bereits eine Aufnahme.": {
+      "comment": "Why a recording cannot start.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A recording is already running."
+          }
+        }
+      }
+    },
+    "FLAC — verlustfrei": {
+      "comment": "Audio archive format option.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FLAC — lossless"
+          }
+        }
+      }
+    },
+    "Fertig": {
+      "comment": "Button that closes the onboarding window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "Geräte neu einlesen": {
+      "comment": "Button that re-reads the audio inputs.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload devices"
+          }
+        }
+      }
+    },
+    "Gerätekennung": {
+      "comment": "Settings label showing the stored device UID.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device identifier"
+          }
+        }
+      }
+    },
+    "Hinzufügen": {
+      "comment": "Button that adds a watchlist entry.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "Im Finder zeigen": {
+      "comment": "Button that opens the recording folder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
+          }
+        }
+      }
+    },
+    "In den Systemeinstellungen abgelehnt. Dort wieder erlauben.": {
+      "comment": "Onboarding detail for a denied microphone permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied in System Settings. Allow it again there."
+          }
+        }
+      }
+    },
+    "JPEG-Qualität": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JPEG quality"
+          }
+        }
+      }
+    },
+    "Jede App": {
+      "comment": "Rule option: the rule is not limited to one app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any app"
+          }
+        }
+      }
+    },
+    "Jedes Meeting wird als eigener Ordner hier abgelegt. Steno schreibt nirgendwo sonst hin.": {
+      "comment": "Explains the recording folder setting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every meeting is written here as its own folder. Steno writes nowhere else."
+          }
+        }
+      }
+    },
+    "Jetzt suchen": {
+      "comment": "Button that checks for updates.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check now"
+          }
+        }
+      }
+    },
+    "Keine Regeln. Ohne Regel fragt Steno bei jedem erkannten Meeting.": {
+      "comment": "Empty state of the rules list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No rules. Without one, Steno asks about every meeting it detects."
+          }
+        }
+      }
+    },
+    "Letztes Meeting im Finder zeigen": {
+      "comment": "Menu item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show last meeting in Finder"
+          }
+        }
+      }
+    },
+    "Maximale Bildkante": {
+      "comment": "Settings label: longer edge of a saved screenshot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum image edge"
+          }
+        }
+      }
+    },
+    "Meeting-Titel in den Ordnernamen aufnehmen": {
+      "comment": "Settings toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include the meeting title in the folder name"
+          }
+        }
+      }
+    },
+    "Mikrofon": {
+      "comment": "Permission name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone"
+          }
+        }
+      }
+    },
+    "Mindestabstand, Display mit der Maus": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimum interval, display with the pointer"
+          }
+        }
+      }
+    },
+    "Mindestabstand, normales Display": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimum interval, other displays"
+          }
+        }
+      }
+    },
+    "Mitteilung, wenn ein Transkript fertig ist": {
+      "comment": "Settings toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify me when a transcript is finished"
+          }
+        }
+      }
+    },
+    "Modelle": {
+      "comment": "Name of the fourth onboarding row: the ASR and diarization models.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models"
+          }
+        }
+      }
+    },
+    "Modelle fehlen": {
+      "comment": "Model status.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models missing"
+          }
+        }
+      }
+    },
+    "Modelle installiert": {
+      "comment": "Model status.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models installed"
+          }
+        }
+      }
+    },
+    "Modelle laden": {
+      "comment": "Button that starts the model download.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download models"
+          }
+        }
+      }
+    },
+    "Modelle unvollständig": {
+      "comment": "Model status: one of the two model sets is missing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models incomplete"
+          }
+        }
+      }
+    },
+    "Modelle werden geladen …": {
+      "comment": "Model status without a known progress share.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading models…"
+          }
+        }
+      }
+    },
+    "Modelle werden geladen … %d %%": {
+      "comment": "Model status with progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading models… %d %%"
+          }
+        }
+      }
+    },
+    "Modellordner zeigen": {
+      "comment": "Button that reveals the model directory.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show model folder"
+          }
+        }
+      }
+    },
+    "Muster als regulären Ausdruck auswerten": {
+      "comment": "Help text of the regex toggle in a rule.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treat the pattern as a regular expression"
+          }
+        }
+      }
+    },
+    "Nach Updates suchen …": {
+      "comment": "Menu item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        }
+      }
+    },
+    "Name": {
+      "comment": "Watchlist table column and text field placeholder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "Nimmt Systemton und Mikrofon getrennt auf.": {
+      "comment": "Help text of the online record item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records system audio and the microphone as separate channels."
+          }
+        }
+      }
+    },
+    "Nimmt das Raummikrofon auf. Teilnehmer informieren.": {
+      "comment": "Help text of the on-site record item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records the room microphone. Tell the other participants."
+          }
+        }
+      }
+    },
+    "Nimmt deine Stimme auf. Beide Modi brauchen es.": {
+      "comment": "One-sentence explanation of the microphone permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records your voice. Both modes need it."
+          }
+        }
+      }
+    },
+    "Nimmt den Ton der Meeting-App auf, damit die anderen Teilnehmer im Transkript stehen. Nur für Online-Meetings.": {
+      "comment": "One-sentence explanation of the system audio permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records the meeting app’s audio so the other participants end up in the transcript. Online meetings only."
+          }
+        }
+      }
+    },
+    "Noch kein Meeting aufgenommen.": {
+      "comment": "Help text when there is no last meeting to show.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No meeting recorded yet."
+          }
+        }
+      }
+    },
+    "Nur der Titel, nur während einer Aufnahme, nur um den Ordner zu benennen und Regeln zu prüfen. Zoom und Google Meet tragen im Fenstertitel keinen Meetingnamen — das ist der einzige Weg dorthin. Standardmäßig aus.": {
+      "comment": "Privacy sentence for the calendar-titles setting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the title, only during a recording, only to name the folder and match rules. Zoom and Google Meet carry no meeting name in their window titles — this is the only way to one. Off by default."
+          }
+        }
+      }
+    },
+    "Nur noch %@ frei. Eine Stunde Aufnahme braucht rund 1 GB.": {
+      "comment": "Low disk space warning; %@ is a formatted byte count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only %@ left. An hour of recording needs about 1 GB."
+          }
+        }
+      }
+    },
+    "Nutzt eine dieser Apps das Mikrofon, schlägt Steno eine Aufnahme vor. Erkannt wird ausschließlich über Core Audio — kein Kalender, keine Fensterinspektion.": {
+      "comment": "Explains the watchlist.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When one of these apps reads the microphone, Steno offers to record. Detection is Core Audio only — no calendar, no window scraping."
+          }
+        }
+      }
+    },
+    "Onboarding erneut anzeigen": {
+      "comment": "Button that reopens the onboarding window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show onboarding again"
+          }
+        }
+      }
+    },
+    "Online": {
+      "comment": "Mode name, as it appears in the recording status line.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online"
+          }
+        }
+      }
+    },
+    "Online-Meeting aufnehmen": {
+      "comment": "Menu item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record online meeting"
+          }
+        }
+      }
+    },
+    "Ordner": {
+      "comment": "Settings label showing the model directory path.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder"
+          }
+        }
+      }
+    },
+    "Ordner öffnen": {
+      "comment": "Menu item that opens the recording root.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open folder"
+          }
+        }
+      }
+    },
+    "Ordner, in dem Steno die Meetings ablegt.": {
+      "comment": "Message of the folder picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The folder Steno writes meetings into."
+          }
+        }
+      }
+    },
+    "Regel aktiv": {
+      "comment": "Help text of the enable toggle in a rule.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule active"
+          }
+        }
+      }
+    },
+    "Regel entfernen": {
+      "comment": "Help text of the remove button in a rule.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove rule"
+          }
+        }
+      }
+    },
+    "Regel hinzufügen": {
+      "comment": "Button that appends a new rule.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add rule"
+          }
+        }
+      }
+    },
+    "Regeln": {
+      "comment": "Settings tab, and the name of the rules pane inside it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rules"
+          }
+        }
+      }
+    },
+    "Regeln werden geprüft, sobald ein Meeting erkannt wird. Die erste passende gewinnt; passt keine, fragt Steno nach.": {
+      "comment": "Explains the rules table.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rules are evaluated as soon as a meeting is detected. The first match wins; if none matches, Steno asks."
+          }
+        }
+      }
+    },
+    "Regex": {
+      "comment": "Toggle in a rule row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regex"
+          }
+        }
+      }
+    },
+    "Screenshots": {
+      "comment": "Settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshots"
+          }
+        }
+      }
+    },
+    "So lange darf keine beobachtete App mehr das Mikrofon lesen, bevor eine Online-Aufnahme sich selbst beendet.": {
+      "comment": "Explains the auto-stop delay.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This long without a watched app reading the microphone before an online recording stops itself."
+          }
+        }
+      }
+    },
+    "So oft wird jedes Display gesichert, egal ob sich etwas geändert hat. Ohne das hätte ein statischer Monitor über eine Stunde kein einziges Bild.": {
+      "comment": "Explains the anchor interval.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How often each display is saved regardless of what changed. Without it a static monitor would go a whole hour without a single frame."
+          }
+        }
+      }
+    },
+    "Speichert Screenshots der Bildschirme und liest Fenstertitel für Regeln.": {
+      "comment": "One-sentence explanation of the screen recording permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saves screenshots of the displays and reads window titles for rules."
+          }
+        }
+      }
+    },
+    "Spracherkennung und Sprechertrennung laufen offline auf diesem Mac. Die Modelle werden einmal geladen.": {
+      "comment": "One-sentence explanation of the models row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition and speaker separation run offline on this Mac. The models are downloaded once."
+          }
+        }
+      }
+    },
+    "Spracherkennung und Sprechertrennung laufen offline. Der Download ist die einzige Netzverbindung, die Steno je aufbaut.": {
+      "comment": "Explains the transcription settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition and speaker separation run offline. The download is the only network connection Steno ever makes."
+          }
+        }
+      }
+    },
+    "Sprecherzahl vor einer Vor-Ort-Aufnahme abfragen": {
+      "comment": "Settings toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask how many speakers before an on-site recording"
+          }
+        }
+      }
+    },
+    "Steno einrichten": {
+      "comment": "Title of the onboarding window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set up Steno"
+          }
+        }
+      }
+    },
+    "Steno nimmt Meetings auf und transkribiert sie auf diesem Mac. Dafür braucht es drei Berechtigungen und einmal die Modelle.": {
+      "comment": "Onboarding subtitle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno records meetings and transcribes them on this Mac. For that it needs three permissions and, once, the models."
+          }
+        }
+      }
+    },
+    "Steno schreibt ausschließlich in den Ordner, den du unter „Einstellungen → Allgemein“ auswählst. Ausnahme: die Modelle liegen unter „Library/Application Support/Steno“. Nichts verlässt diesen Mac.": {
+      "comment": "Onboarding footer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno writes only into the folder you choose under Settings → General. The one exception is the models, which live in Library/Application Support/Steno. Nothing leaves this Mac."
+          }
+        }
+      }
+    },
+    "Steno-Einstellungen": {
+      "comment": "Title of the settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno Settings"
+          }
+        }
+      }
+    },
+    "Steno: Aufnahme läuft, %@": {
+      "comment": "Accessibility description of the menu bar icon while recording; %@ is mm:ss.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno: recording, %@"
+          }
+        }
+      }
+    },
+    "Steno: Verarbeitung": {
+      "comment": "Accessibility description of the menu bar icon while processing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno: processing"
+          }
+        }
+      }
+    },
+    "Steno: Verarbeitung, %d %%": {
+      "comment": "Accessibility description of the menu bar icon while processing, with progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno: processing, %d %%"
+          }
+        }
+      }
+    },
+    "Steno: bereit": {
+      "comment": "Accessibility description of the idle menu bar icon.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steno: ready"
+          }
+        }
+      }
+    },
+    "Systemaudio": {
+      "comment": "Permission name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System audio"
+          }
+        }
+      }
+    },
+    "Systemaudio-Prüfung ergab Status %d.": {
+      "comment": "Shown when the process tap probe failed for a reason that is not a permission answer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system audio check returned status %d."
+          }
+        }
+      }
+    },
+    "Systemeinstellungen öffnen": {
+      "comment": "Button that opens the matching privacy pane.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open System Settings"
+          }
+        }
+      }
+    },
+    "Systemvorgabe": {
+      "comment": "Input device option: whatever macOS currently uses.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System default"
+          }
+        }
+      }
+    },
+    "Titel des laufenden Kalendertermins lesen": {
+      "comment": "Settings toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the title of the running calendar event"
+          }
+        }
+      }
+    },
+    "Titel enthält …": {
+      "comment": "Placeholder of the pattern field in a rule.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title contains…"
+          }
+        }
+      }
+    },
+    "Transkription": {
+      "comment": "Settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription"
+          }
+        }
+      }
+    },
+    "Updates": {
+      "comment": "Settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates"
+          }
+        }
+      }
+    },
+    "Updates kommen über GitHub-Releases und sind mit einem eigenen Schlüssel signiert. Die Einstellung wird gespeichert; verdrahtet wird sie mit der ersten Veröffentlichung.": {
+      "comment": "Explains the update settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates come from GitHub releases and are signed with their own key. The setting is stored; it is wired up with the first release."
+          }
+        }
+      }
+    },
+    "Verarbeitung": {
+      "comment": "Label of the processing phase.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing"
+          }
+        }
+      }
+    },
+    "Version": {
+      "comment": "Settings label above the build summary.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        }
+      }
+    },
+    "Vor Ort": {
+      "comment": "Mode name, as it appears in the recording status line.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On site"
+          }
+        }
+      }
+    },
+    "Vor-Ort-Meeting aufnehmen": {
+      "comment": "Menu item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record on-site meeting"
+          }
+        }
+      }
+    },
+    "WAV — Original behalten": {
+      "comment": "Audio archive format option.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WAV — keep the original"
+          }
+        }
+      }
+    },
+    "Warte auf Bestätigung in den Systemeinstellungen.": {
+      "comment": "Shown when the login item registration needs approval.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for approval in System Settings."
+          }
+        }
+      }
+    },
+    "Watchlist": {
+      "comment": "Name of the watchlist pane in the rules tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watchlist"
+          }
+        }
+      }
+    },
+    "Weiter": {
+      "comment": "Button of the low disk space alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        }
+      }
+    },
+    "Wenig Speicherplatz": {
+      "comment": "Title of the low disk space alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low disk space"
+          }
+        }
+      }
+    },
+    "Zu wenig Speicherplatz: nur noch %@ frei.": {
+      "comment": "Why a recording cannot start; %@ is a formatted byte count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough disk space: only %@ left."
+          }
+        }
+      }
+    },
+    "Zugriff erlauben": {
+      "comment": "Button that asks macOS for a permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow access"
+          }
+        }
+      }
+    },
+    "erteilt": {
+      "comment": "Accessibility label of the green check mark in the onboarding.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "granted"
+          }
+        }
+      }
+    },
+    "fehlt": {
+      "comment": "Accessibility label of the empty circle in the onboarding.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "missing"
+          }
+        }
+      }
+    },
+    "fragen": {
+      "comment": "Rule action.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ask"
+          }
+        }
+      }
+    },
+    "immer": {
+      "comment": "Rule action.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "always"
+          }
+        }
+      }
+    },
+    "macOS gibt die Bildschirmaufnahme erst nach einem Neustart von Steno frei.": {
+      "comment": "Onboarding detail for the screen recording permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS only grants screen recording after Steno is restarted."
+          }
+        }
+      }
+    },
+    "nie": {
+      "comment": "Rule action.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "never"
+          }
+        }
+      }
+    },
+    "v3 ist mehrsprachig, Deutsch inbegriffen. v2 ist älter und schneller.": {
+      "comment": "Explains the ASR version picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "v3 is multilingual, German included. v2 is older and faster."
+          }
+        }
+      }
+    },
+    "verfügbar ab der Transkription (M5)": {
+      "comment": "Help text of a button that is disabled until M5.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "available from transcription onwards (M5)"
+          }
+        }
+      }
+    },
+    "verfügbar ab der ersten Veröffentlichung": {
+      "comment": "Help text of a button that is disabled until the first release.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "available from the first release onwards"
+          }
+        }
+      }
+    },
+    "Änderungsschwelle, Display mit der Maus": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change threshold, display with the pointer"
+          }
+        }
+      }
+    },
+    "Änderungsschwelle, normales Display": {
+      "comment": "Settings label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change threshold, other displays"
+          }
+        }
+      }
+    },
+    "Öffnen": {
+      "comment": "Button that opens the Login Items settings pane.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

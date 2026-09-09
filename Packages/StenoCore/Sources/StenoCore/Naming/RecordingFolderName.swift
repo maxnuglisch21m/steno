@@ -115,6 +115,83 @@ public enum RecordingFolderName {
         return truncate(slug, to: maxLength)
     }
 
+    // MARK: - Recognising a name again
+
+    /// Whether a folder name is shaped like one Steno wrote:
+    /// `YYYY-MM-DD_HHMM_<label>` with an optional `_<slug>` and an optional `_<n>`
+    /// collision suffix.
+    ///
+    /// This is what keeps "the last meeting" and the crash-recovery scan from picking
+    /// up whatever else happens to sit in the recording root.
+    public static func matches(_ name: String) -> Bool {
+        parse(name) != nil
+    }
+
+    /// The date and time encoded in a recording folder name, to the minute.
+    ///
+    /// Returns `nil` for a name that is not one of ours. The value is only as precise
+    /// as the name — `meta.json` holds the exact start — but it is enough to sort
+    /// folders without opening every one of them.
+    public static func startedDate(from name: String, timeZone: TimeZone = .current) -> Date? {
+        guard let parsed = parse(name) else { return nil }
+        var components = DateComponents()
+        components.year = parsed.year
+        components.month = parsed.month
+        components.day = parsed.day
+        components.hour = parsed.hour
+        components.minute = parsed.minute
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar.date(from: components)
+    }
+
+    /// The label part of a recording folder name — `Teams`, or `Vorort`.
+    public static func label(fromFolderName name: String) -> String? {
+        parse(name)?.label
+    }
+
+    private struct Parsed {
+        var year: Int
+        var month: Int
+        var day: Int
+        var hour: Int
+        var minute: Int
+        var label: String
+    }
+
+    private static func parse(_ name: String) -> Parsed? {
+        let parts = name.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3 else { return nil }
+
+        let dateParts = parts[0].split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard dateParts.count == 3,
+              dateParts[0].count == 4, dateParts[1].count == 2, dateParts[2].count == 2,
+              let year = digits(dateParts[0]),
+              let month = digits(dateParts[1]), (1...12).contains(month),
+              let day = digits(dateParts[2]), (1...31).contains(day)
+        else { return nil }
+
+        guard parts[1].count == 4, let clock = digits(parts[1]) else { return nil }
+        let hour = clock / 100
+        let minute = clock % 100
+        guard (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+
+        guard !parts[2].isEmpty else { return nil }
+        return Parsed(
+            year: year, month: month, day: day,
+            hour: hour, minute: minute, label: parts[2]
+        )
+    }
+
+    /// An all-digit component as a number. Rejects `+1`, `1e3`, and non-ASCII digits,
+    /// which `Int(_:)` alone would let through in part.
+    private static func digits(_ component: String) -> Int? {
+        guard !component.isEmpty,
+              component.allSatisfy({ $0.isASCII && $0.isNumber })
+        else { return nil }
+        return Int(component)
+    }
+
     // MARK: - Private
 
     private static func truncate(_ slug: String, to maxLength: Int) -> String {

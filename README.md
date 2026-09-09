@@ -39,6 +39,11 @@ the ASR and diarization models are cached under
 `~/Library/Application Support/Steno/Models/` (or FluidAudio's own
 `~/.cache/fluidaudio/`, where its API does not accept a directory).
 
+The exact on-disk contract — folder naming, every `meta.json` key, the state
+lifecycle, `screens.jsonl`, and both transcript files — is in
+[docs/FORMAT.md](docs/FORMAT.md). That is the document a downstream tool, or a
+sibling app on another platform, has to satisfy.
+
 ## Two modes
 
 |  | `online` | `onsite` |
@@ -69,17 +74,76 @@ not notarized. macOS will refuse to open such an app on the first try; use
 **System Settings → Privacy & Security → Open Anyway**, or right-click the app
 and choose **Open**.
 
+## The menu
+
+Steno has no window it insists on. The whole interface is the status item:
+
+```
+Aufnahme läuft · Vor Ort · 12:34      (only while recording, not a command)
+Online-Meeting aufnehmen        ⌥⌘R
+Vor-Ort-Meeting aufnehmen       ⌥⌘V
+Aufnahme stoppen                ⌥⌘S   (only while recording)
+—
+Letztes Meeting im Finder zeigen
+Ordner öffnen
+—
+Nach Updates suchen …                 (from the first release onwards)
+Einstellungen …                  ⌘,
+Beenden                          ⌘Q
+```
+
+The icon says what Steno is doing: a microphone outline when idle, a filled
+microphone with a red dot and the running `mm:ss` while recording — plus a small
+room glyph for `onsite` — and a progress ring while transcribing.
+
+The three shortcuts are registered globally through Carbon's
+`RegisterEventHotKey`, so they work while the menu is closed and without asking
+for Accessibility permission. When a permission is missing, the record items are
+disabled and say which one, both in the title and in the tooltip.
+
+## Settings
+
+Six tabs. The eleven settings from the specification come first within their
+tab; the rest are the additions the plan accepted.
+
+| Tab | Settings |
+|---|---|
+| **Allgemein** | recording folder (with a picker and a reveal button) · start at login · notification when a transcript is finished · show the onboarding again · version |
+| **Aufnahme** | `onsite` input device (every `AVCaptureDevice`, refreshed on hot-plug) · auto-stop delay · ask for the speaker count · audio archive format (AAC / FLAC / WAV) · include the meeting title in the folder name |
+| **Screenshots** | minimum interval and change threshold, each for a normal display and for the display holding the pointer · maximum image edge · JPEG quality · anchor-frame interval |
+| **Transkription** | ASR version (Parakeet v3 / v2) · model status, download, and folder |
+| **Regeln** | watchlist of bundle IDs, validated on entry · rules table (app · title pattern · regex · never/ask/always · on/off) · read calendar titles, off by default |
+| **Updates** | check for updates automatically · check now |
+
+Everything is stored as one JSON blob under a single `UserDefaults` key, and
+decoding falls back per key, so a settings file written by an older build keeps
+working.
+
 ## Permissions
 
-Steno asks for these on first launch, in an onboarding window with one button
-per permission that opens the matching System Settings pane:
+Steno asks for these on first launch, in an onboarding window with four rows and
+one button each — either "allow access" or a jump to the matching System
+Settings pane:
 
 | Permission | Why | Required for |
 |---|---|---|
 | Microphone | records your voice | both modes |
 | System audio recording | taps the meeting app's audio output | `online` |
 | Screen recording | screenshots, and window titles for rules | screenshots, rules |
+| Models | ASR and diarization, downloaded once | the transcript, not the recording |
 | Calendar (optional, off by default) | reads the title of the currently running event, to name folders and match rules for apps whose windows carry no title (Zoom, Meet) | rules and folder titles only |
+
+The window re-checks every five seconds while it is open, and Steno re-checks
+whenever it is brought forward, because these switches are flipped in another
+process.
+
+There is no API that reports whether system audio capture is allowed. Steno
+answers the question by trying: it creates a throwaway global process tap and
+destroys it immediately. Success means the permission is in place; the first
+attempt is also what makes macOS show the prompt.
+
+Missing models do **not** block a recording. Capture happens now, transcription
+happens afterwards and can wait for a download.
 
 Steno is **not** sandboxed — Core Audio process taps and ScreenCaptureKit make
 that impossible. The hardened runtime is enabled.
@@ -110,6 +174,23 @@ package) and is unit-tested with Swift Testing:
 swift test --package-path Packages/StenoCore
 ```
 
+### Debug launch arguments
+
+Debug builds accept three arguments, so the flow can be exercised without a
+meeting, a microphone, or a click:
+
+```sh
+# Record for three seconds through the null recorder, then quit. Leaves a real
+# meeting folder with a real meta.json behind.
+open build/Build/Products/Debug/Steno.app --args --simulate-recording 3 onsite
+
+open build/Build/Products/Debug/Steno.app --args --open-settings
+open build/Build/Products/Debug/Steno.app --args --open-onboarding
+```
+
+They are compiled out of release builds: a shipped app has no business taking
+instructions from its command line.
+
 ## Repository layout
 
 ```
@@ -122,6 +203,7 @@ Config/Steno.entitlements   audio input; not sandboxed
 Tests/StenoTests/           thin app-hosted tests
 scripts/                    changelog-extract.sh (release helpers follow in M7)
 docs/SPEC.md                the specification this implements
+docs/FORMAT.md              the on-disk contract downstream tools read
 ThirdPartyLicenses/         FluidAudio (Apache-2.0) · Sparkle (MIT)
 ```
 
@@ -195,8 +277,8 @@ These are properties of the approach, not bugs to be papered over:
 
 | | | Status |
 |---|---|---|
-| M0 | Menu-bar skeleton + permission onboarding | in progress |
-| M1 | `onsite` audio + microphone-mode check | planned |
+| M0 | Menu-bar skeleton + permission onboarding | **done** |
+| M1 | `onsite` audio + microphone-mode check | in progress |
 | M2 | `online` audio: process tap + aggregate device, 2-channel WAV | planned |
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | planned |
 | M4 | Screenshots across all displays | planned |
