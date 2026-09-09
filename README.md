@@ -125,6 +125,30 @@ docs/SPEC.md                the specification this implements
 ThirdPartyLicenses/         FluidAudio (Apache-2.0) · Sparkle (MIT)
 ```
 
+## Releasing
+
+The pipeline itself lands in M7. The shape of it: update `CHANGELOG.md` so the
+version has its own `## [x.y.z]` section, bump `MARKETING_VERSION` in
+`project.yml`, then push a `vx.y.z` tag. A workflow builds, signs, packages,
+generates the Sparkle appcast, and creates the GitHub release with the zip, the
+appcast, and that changelog section as the notes. A release without its section
+fails before it publishes anything —
+`scripts/changelog-extract.sh x.y.z` is what checks that.
+
+The full procedure, including how the Sparkle signing key is handled, is in
+[CONTRIBUTING.md](CONTRIBUTING.md#releasing).
+
+### Adding a Developer ID later
+
+Until an Apple Developer ID certificate exists, builds are signed ad-hoc
+(`CODE_SIGN_IDENTITY: "-"`) and are not notarized, which is why the first launch
+needs the Gatekeeper detour above. Nothing needs to be rewritten to change that:
+add the repository secrets `DEVELOPER_ID_P12_BASE64`, `APPLE_ID`,
+`APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD`, and the release workflow signs with
+the certificate and notarizes automatically, falling back to ad-hoc when they are
+absent. Sparkle updates keep working across the switch, because they are verified
+by the EdDSA key rather than by the code signature.
+
 ## Dependencies
 
 Two, both via SwiftPM, both pinned exactly:
