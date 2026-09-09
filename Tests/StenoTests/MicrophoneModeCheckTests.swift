@@ -26,8 +26,10 @@ struct MicrophoneModeCheckTests {
         let hint = try #require(decision.hint)
         #expect(hint == MicrophoneModeCheck.standardHint)
         // The sentence has to name both modes: the one in force and the better one.
-        #expect(MicrophoneModeCheck.standardHint.contains("Standard"))
-        #expect(MicrophoneModeCheck.standardHint.contains("Breites Spektrum"))
+        // Compared through the localized display names, not German literals — the
+        // test bundle follows the runner's locale and CI runs in English.
+        #expect(MicrophoneModeCheck.standardHint.contains(MicrophoneMode.standard.displayName))
+        #expect(MicrophoneModeCheck.standardHint.contains(MicrophoneMode.wideSpectrum.displayName))
     }
 
     @Test("voice isolation blocks")

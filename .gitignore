@@ -17,3 +17,6 @@ xcuserdata/
 *.key
 *.p12
 *.pem
+
+# Coverage output from swift test
+*.profraw
