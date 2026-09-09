@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the running job pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      # The pure logic first: it needs no Xcode project, no host app, and no
+      # packages, so it fails in seconds when it is going to fail at all.
+      - name: Test StenoCore
+        run: swift test --package-path Packages/StenoCore
+
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      # Steno.xcodeproj is generated, not checked in.
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Cache resolved packages
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          # Both dependencies are pinned to an exact version in project.yml, so that
+          # file changing is the only thing that can change what gets resolved.
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # ARCHS is given on the command line because a project-level setting does not
+      # reach the SwiftPM package targets, which then also build for x86_64 and fail:
+      # FluidAudio uses Float16, which does not exist on Intel macOS.
+      - name: Test the app
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Steno.xcodeproj \
+            -scheme Steno \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGN_IDENTITY=- \
+            ARCHS=arm64 \
+            | xcbeautify
+
+      # Release uses whole-module optimization, which catches things a Debug build
+      # does not — and is the configuration a release is actually cut from.
+      - name: Build for release
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Steno.xcodeproj \
+            -scheme Steno \
+            -destination 'platform=macOS,arch=arm64' \
+            -configuration Release \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGN_IDENTITY=- \
+            ARCHS=arm64 \
+            | xcbeautify
+
+      - name: Check the release scripts
+        run: |
+          bash -n scripts/changelog-extract.sh
+          # The changelog must have an Unreleased section to collect notes in.
+          scripts/changelog-extract.sh Unreleased > /dev/null

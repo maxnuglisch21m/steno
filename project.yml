@@ -1,0 +1,117 @@
+name: Steno
+
+options:
+  bundleIdPrefix: de.21m
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "26.6"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  # The generated project is not checked in; regenerate it with `make gen`.
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    # Data-race safety is checked in full, not just where it is convenient. Real-time
+    # audio code has to state its own guarantees rather than being waved through.
+    SWIFT_STRICT_CONCURRENCY: complete
+    # Apple Silicon only, per the specification.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    ENABLE_HARDENED_RUNTIME: YES
+    # No signing identity exists yet, so builds are signed ad-hoc. The release
+    # workflow switches to a Developer ID once its secrets are present.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    # Nothing in this project runs a script during the build, so the sandbox that
+    # would police one only gets in the way of SwiftPM's own plugins.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    CLANG_ENABLE_MODULES: YES
+    DEAD_CODE_STRIPPING: YES
+  configs:
+    debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+    release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    exactVersion: 0.15.6
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.6
+  StenoCore:
+    path: Packages/StenoCore
+
+targets:
+  Steno:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Steno
+    settings:
+      base:
+        PRODUCT_NAME: Steno
+        PRODUCT_BUNDLE_IDENTIFIER: de.21m.steno
+        # Hand-written, because LSUIElement, the usage descriptions, and the Sparkle
+        # keys all need to be reviewable in one file.
+        INFOPLIST_FILE: Sources/Steno/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Config/Steno.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    dependencies:
+      - package: StenoCore
+        product: StenoCore
+      - package: FluidAudio
+        product: FluidAudio
+      - package: Sparkle
+        product: Sparkle
+
+  StenoTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/StenoTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.21m.steno.tests
+        GENERATE_INFOPLIST_FILE: YES
+        # The interesting logic lives in StenoCore and is tested by `swift test`.
+        # These are thin, app-hosted checks of the shell around it.
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Steno.app/Contents/MacOS/Steno"
+    dependencies:
+      - target: Steno
+
+schemes:
+  Steno:
+    build:
+      targets:
+        Steno: all
+        StenoTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - StenoTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Deliberately NOT sandboxed: Core Audio process taps and ScreenCaptureKit are
+	     both out of reach inside the App Sandbox, so there is no
+	     com.apple.security.app-sandbox key here. The hardened runtime is enabled
+	     through the ENABLE_HARDENED_RUNTIME build setting instead. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

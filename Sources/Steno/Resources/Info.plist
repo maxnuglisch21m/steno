@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Steno</string>
+	<key>CFBundleDisplayName</key>
+	<string>Steno</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>de</string>
+
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<!-- Menu-bar app: no Dock icon, no main window. -->
+	<key>LSUIElement</key>
+	<true/>
+
+	<!-- Permission prompts. German, because the interface is German, and stated in
+	     terms of what Steno does with the data rather than in terms of the API. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Steno nimmt dein Mikrofon auf, um das Meeting zu transkribieren. Die Aufnahme bleibt auf diesem Mac.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Steno nimmt den Ton der Meeting-App auf, damit die anderen Teilnehmer im Transkript stehen. Die Aufnahme bleibt auf diesem Mac.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Steno liest den Titel des laufenden Termins, um den Meeting-Ordner zu benennen und Regeln anzuwenden. Nur der Titel, nur während einer Aufnahme.</string>
+
+	<!-- Sparkle. The feed is attached to every GitHub release; the 302 redirect from
+	     `releases/latest/download` is followed. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/maxnuglisch21m/steno/releases/latest/download/appcast.xml</string>
+	<!-- Replaced with the real EdDSA public key by the first release (M7). The private
+	     half never enters this repository. -->
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Max Nuglisch. MIT-Lizenz.</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+</dict>
+</plist>

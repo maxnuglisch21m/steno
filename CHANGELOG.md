@@ -14,7 +14,8 @@ release notes, and fails if it is missing.
 ### Added
 
 - Repository scaffolding: XcodeGen project definition, Makefile, CI workflow,
-  issue and pull-request templates.
+  issue and pull-request templates, and `scripts/changelog-extract.sh` for
+  turning a section of this file into release notes.
 - `StenoCore`, the framework-free logic package: semantic versions, recording
   folder naming, meeting metadata and its state machine, the screenshot
   decision gate, the screenshot index entry, WAV header parsing and repair,
