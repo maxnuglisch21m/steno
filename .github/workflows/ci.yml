@@ -89,6 +89,16 @@ jobs:
 
       - name: Check the release scripts
         run: |
-          bash -n scripts/changelog-extract.sh
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
           # The changelog must have an Unreleased section to collect notes in.
           scripts/changelog-extract.sh Unreleased > /dev/null
+          # A release candidate falls back to it …
+          scripts/changelog-extract.sh --prerelease-fallback 0.0.0-ci > /dev/null
+          # … and a final release does not: a version with no section still fails,
+          # which is what stops a release from shipping notes headed "Unreleased".
+          if scripts/changelog-extract.sh --prerelease-fallback 9.9.9 > /dev/null 2>&1; then
+            echo "::error::changelog-extract.sh accepted a final version with no section"
+            exit 1
+          fi

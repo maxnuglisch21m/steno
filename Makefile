@@ -35,7 +35,7 @@ XCODEBUILD_FLAGS := \
 # pipefail above. Fall back to raw output when it is not installed.
 PRETTY := $(shell command -v xcbeautify 2>/dev/null || echo cat)
 
-.PHONY: all gen test test-core test-app build run clean help
+.PHONY: all gen test test-core test-app build run release bump clean help
 
 all: test
 
@@ -45,6 +45,8 @@ help:
 	@echo "test-core  StenoCore unit tests only (no Xcode needed)"
 	@echo "build      Release build into $(BUILD_DIR)/"
 	@echo "run        Debug build, then open the app"
+	@echo "release    VERSION=x.y.z  build and package dist/Steno-x.y.z.zip (publishes nothing)"
+	@echo "bump       VERSION=x.y.z  changelog, project.yml, commit, annotated tag (never pushes)"
 	@echo "clean      remove $(BUILD_DIR)/ and $(PROJECT)"
 
 ## Regenerate the Xcode project. Run this after touching project.yml or adding files.
@@ -70,6 +72,20 @@ build: gen
 run: gen
 	set -o pipefail && xcodebuild build $(XCODEBUILD_FLAGS) -configuration Debug | $(PRETTY)
 	open $(BUILD_DIR)/Build/Products/Debug/Steno.app
+
+## The release build, packaged the way the workflow packages it: same flags, same
+## version overrides, same ditto archive. Signs ad-hoc unless DEVELOPER_ID_IDENTITY is
+## set, and writes an appcast only with SPARKLE_KEY_FILE set. Nothing is published.
+release:
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=1.2.3" >&2; exit 2; }
+	scripts/release.sh $(VERSION)
+
+## Cut a version: the Unreleased notes become a dated section, project.yml is bumped,
+## both are committed, and an annotated tag is created. Pushing stays a separate,
+## deliberate command — the tag reaching origin is what publishes a release.
+bump:
+	@test -n "$(VERSION)" || { echo "usage: make bump VERSION=1.2.3" >&2; exit 2; }
+	scripts/bump-version.sh $(VERSION)
 
 clean:
 	rm -rf $(BUILD_DIR) $(PROJECT) $(CORE)/.build

@@ -1,0 +1,318 @@
+name: Release
+
+# A tag is the whole trigger: `git push origin v1.2.3` builds, packages, signs what it
+# can, writes the Sparkle appcast, and publishes the GitHub release the app updates
+# from. `workflow_dispatch` exists so a failed run can be repeated against the same tag
+# without deleting and re-pushing it; every step below is written to be repeatable.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re-)release, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  release:
+    name: Build, sign, and publish
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      # `secrets` is not available in a step's `if:`, so the questions "may we sign?"
+      # and "may we sign the appcast?" are answered once, here, into plain strings the
+      # steps can test. The values are booleans-as-text: "true" or "false".
+      HAS_SIGNING: ${{ secrets.DEVELOPER_ID_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != '' }}
+      HAS_SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Work out the tag
+        id: tag
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          case "$TAG" in
+          v*) ;;
+          *)
+            echo "::error::tag '$TAG' does not start with 'v'"
+            exit 1
+            ;;
+          esac
+          VERSION="${TAG#v}"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            # A tag with a pre-release part — v0.1.0-rc.1 — is published as a
+            # prerelease, which keeps it out of `releases/latest` and therefore out of
+            # the appcast URL the shipped app reads.
+            case "$VERSION" in
+            *-*) echo "prerelease=true" ;;
+            *) echo "prerelease=false" ;;
+            esac
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          # The build number is `git rev-list --count HEAD`, which needs the history.
+          fetch-depth: 0
+
+      - name: Work out the build number and the release notes
+        id: build
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          BUILD="$(git rev-list --count HEAD)"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+
+          # Before anything is compiled, let alone published: a release whose notes are
+          # missing is a release nobody can read, and this is the cheapest possible
+          # moment to say so. A release candidate falls back to [Unreleased] — that is
+          # what it is cut from — while a final release must have its own section.
+          scripts/changelog-extract.sh --prerelease-fallback "$VERSION" \
+            > "dist/Steno-$VERSION.md"
+
+          echo "Release notes:"
+          cat "dist/Steno-$VERSION.md"
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          echo "signing: $HAS_SIGNING · notarization: $HAS_NOTARY · appcast: $HAS_SPARKLE_KEY"
+
+      - name: Import the Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          # A keychain of its own, thrown away with the runner. The password protects
+          # nothing that outlives the job, so it is generated rather than configured.
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Do not let it re-lock in the middle of a long build.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
+            -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          # Without this, codesign's first use of the key opens a dialog nobody is
+          # there to answer, and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Install build tools
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Cache resolved packages
+        uses: actions/cache@v6
+        with:
+          path: build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # ARCHS is given on the command line for the same reason as in ci.yml: a
+      # project-level setting does not reach the SwiftPM package targets, which then
+      # also build for x86_64 and fail on FluidAudio's use of Float16.
+      - name: Build
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          if [[ "$HAS_SIGNING" == "true" ]]; then
+            IDENTITY="Developer ID Application"
+            # --timestamp is a notarization requirement, and a signature without one
+            # stops verifying the day the certificate expires. The strict entitlements
+            # come with it: signed by one certificate, the app and the embedded
+            # Sparkle.framework share a team, so library validation passes and the
+            # ad-hoc exception is not needed — see Config/Steno-adhoc.entitlements.
+            EXTRA=(
+              DEVELOPMENT_TEAM="$TEAM_ID"
+              OTHER_CODE_SIGN_FLAGS=--timestamp
+              CODE_SIGN_ENTITLEMENTS=Config/Steno.entitlements
+              # get-task-allow is injected by default and is a notarization
+              # rejection: a distributable build must not be debuggable.
+              CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+            )
+          else
+            IDENTITY="-"
+            EXTRA=()
+          fi
+
+          xcodebuild build \
+            -project Steno.xcodeproj \
+            -scheme Steno \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            ARCHS=arm64 \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            CODE_SIGN_IDENTITY="$IDENTITY" \
+            CODE_SIGN_STYLE=Manual \
+            ${EXTRA[@]+"${EXTRA[@]}"}
+
+      - name: Verify the signature
+        run: |
+          APP=build/Build/Products/Release/Steno.app
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=2 "$APP" 2>&1
+          # The updater is a bundle inside the framework and is signed separately;
+          # an unsigned one fails at install time rather than at build time.
+          codesign -dv --verbose=2 "$APP/Contents/Frameworks/Sparkle.framework" 2>&1
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist"
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          # ditto rather than zip: it is what Sparkle and notarization both expect, and
+          # --sequesterRsrc keeps extended attributes out of the archive's top level.
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Build/Products/Release/Steno.app "dist/Steno-$VERSION.zip"
+          ls -lh "dist/Steno-$VERSION.zip"
+
+      - name: Notarize and staple
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARY == 'true'
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "dist/Steno-$VERSION.zip" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APP_PASSWORD" \
+            --wait
+
+          # The ticket is stapled to the app, not to the zip, so the archive has to be
+          # made again afterwards. Without this the first launch still needs a network
+          # round trip to Apple — and fails without one.
+          xcrun stapler staple build/Build/Products/Release/Steno.app
+          rm -f "dist/Steno-$VERSION.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Build/Products/Release/Steno.app "dist/Steno-$VERSION.zip"
+          xcrun stapler validate build/Build/Products/Release/Steno.app
+
+      - name: Generate the Sparkle appcast
+        if: env.HAS_SPARKLE_KEY == 'true'
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          TOOLS=build/SourcePackages/artifacts/sparkle/Sparkle/bin
+          test -x "$TOOLS/generate_appcast"
+
+          # The feed is cumulative, so the previous one is the starting point. It is
+          # taken from the newest *stable* release rather than the newest release of
+          # any kind: `releases/latest/download/appcast.xml` — the URL the app reads —
+          # resolves to the newest non-prerelease, so seeding from a release candidate
+          # would put candidates in front of everyone.
+          PREVIOUS="$(gh release list --limit 30 --json tagName,isDraft,isPrerelease \
+            --jq "[.[] | select(.isDraft == false and .isPrerelease == false) | .tagName]
+                  | map(select(. != \"$TAG\")) | .[0] // empty")"
+          if [[ -n "$PREVIOUS" ]]; then
+            echo "seeding the feed from $PREVIOUS"
+            gh release download "$PREVIOUS" --pattern 'appcast.xml' --dir dist || true
+            gh release download "$PREVIOUS" --pattern '*.zip' --dir dist || true
+          else
+            echo "no previous stable release; starting a new feed"
+          fi
+
+          # The key never appears on a command line, where `ps` would show it to
+          # anything running on the runner, and never in the workspace, which is what
+          # gets uploaded on failure. `$RUNNER_TEMP` is thrown away with the job.
+          KEY_FILE="$RUNNER_TEMP/ed.key"
+          umask 077
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+
+          # --embed-release-notes puts the changelog section into the appcast itself.
+          # The alternative is a releaseNotesLink to a file that would have to be
+          # uploaded and fetched at check time; embedding means the update dialog has
+          # its text the moment the feed is read, and one asset fewer can go missing.
+          "$TOOLS/generate_appcast" dist/ \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/$TAG/" \
+            --embed-release-notes \
+            --link "https://github.com/${{ github.repository }}" \
+            --full-release-notes-url "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md" \
+            --maximum-versions 3 \
+            -o dist/appcast.xml
+
+          rm -f "$KEY_FILE"
+
+          # Only this release's zip is an asset of this release; the older ones were
+          # downloaded to give generate_appcast its history and their entries still
+          # point at the releases they came from.
+          find dist -name '*.zip' ! -name "Steno-$VERSION.zip" -delete
+          rm -rf dist/old_updates
+
+          xmllint --noout dist/appcast.xml
+          cat dist/appcast.xml
+
+      - name: Note the missing appcast
+        if: env.HAS_SPARKLE_KEY != 'true'
+        run: |
+          echo "::notice::SPARKLE_PRIVATE_KEY is not set — publishing the zip without an appcast, so in-app updates will not see this release."
+
+      - name: Publish the release
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ASSETS=("dist/Steno-$VERSION.zip")
+          # An `if` rather than `[[ … ]] && …`: under `set -e` a false test at the end
+          # of an AND-list ends the step, and "there is no appcast" is not an error.
+          if [[ -f dist/appcast.xml ]]; then ASSETS+=(dist/appcast.xml); fi
+
+          # Repeatable on purpose: `workflow_dispatch` against a tag that already has a
+          # release replaces its assets instead of failing on the second attempt.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG exists; replacing its assets"
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" \
+              --title "Steno $VERSION" \
+              --notes-file "dist/Steno-$VERSION.md" \
+              --prerelease="$PRERELEASE"
+          else
+            EXTRA=()
+            if [[ "$PRERELEASE" == "true" ]]; then EXTRA+=(--prerelease); fi
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --title "Steno $VERSION" \
+              --notes-file "dist/Steno-$VERSION.md" \
+              ${EXTRA[@]+"${EXTRA[@]}"}
+          fi
+
+          gh release view "$TAG" --json tagName,isPrerelease,assets \
+            --jq '{tag: .tagName, prerelease: .isPrerelease, assets: [.assets[].name]}'
