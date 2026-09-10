@@ -25,6 +25,8 @@ are lost on the next generate.
 | `make test` | `swift test` for `StenoCore`, then `xcodebuild test` for the app |
 | `make build` | Release build into `build/` |
 | `make run` | Debug build, then `open` the app |
+| `make release VERSION=x.y.z` | build and package `dist/Steno-x.y.z.zip` locally; publishes nothing |
+| `make bump VERSION=x.y.z` | cut a version: changelog, `project.yml`, commit, annotated tag; never pushes |
 | `make clean` | remove `build/` and `Steno.xcodeproj` |
 
 ## Architecture
@@ -78,17 +80,42 @@ anything a user would notice.
 
 ## Releasing
 
-The release pipeline lands in M7; this is the shape it takes.
+1. **Prepare the version.**
 
-1. Update `CHANGELOG.md`: rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`
-   and open a fresh `## [Unreleased]` above it. A release fails without its
-   section — check with `scripts/changelog-extract.sh x.y.z`.
-2. Bump `MARKETING_VERSION` in `project.yml`. The build number is derived from
-   `git rev-list --count HEAD` in CI, so it needs no manual bump.
-3. Tag and push: `git tag v x.y.z` (no space) and `git push --tags`. The
-   `release` workflow builds, signs, packages, generates the appcast, and
-   creates the GitHub release with the zip, `appcast.xml`, and the changelog
-   section as the notes.
+   ```sh
+   make bump VERSION=0.2.0
+   ```
+
+   `scripts/bump-version.sh` renames `## [Unreleased]` to `## [0.2.0] - <today>`,
+   opens a fresh empty `## [Unreleased]` above it, rewrites the comparison links
+   at the foot of the changelog, sets `MARKETING_VERSION` in `project.yml`,
+   commits both files as `chore(release): 0.2.0`, and creates the annotated tag
+   `v0.2.0`. It refuses a version that already has a section and one whose
+   Unreleased section is empty. It does not push.
+
+   The build number is not bumped by hand: it is `git rev-list --count HEAD`,
+   computed in the workflow.
+
+2. **Check it builds, if you want to** — `make release VERSION=0.2.0` runs the
+   same Release build and `ditto` packaging locally and publishes nothing.
+
+3. **Push.** The tag is what publishes:
+
+   ```sh
+   git push origin main && git push origin v0.2.0
+   ```
+
+4. **Watch the run.** `gh run watch --exit-status`. It builds, signs, packages,
+   generates the appcast, and creates the GitHub release. If it fails, fix the
+   cause and re-run the workflow against the same tag from the Actions tab
+   (`workflow_dispatch`, input `tag`) — a re-run replaces the release's assets
+   rather than failing on the second attempt, so the tag does not have to be
+   deleted and re-pushed.
+
+A release candidate is tagged the same way (`v0.2.0-rc.1`) and needs no
+changelog section of its own: it is published as a GitHub prerelease, its notes
+come from `## [Unreleased]`, and because `releases/latest` resolves to the
+newest *stable* release, no installed copy of Steno ever sees it in the feed.
 
 ### Sparkle keys
 
@@ -99,20 +126,41 @@ that must never reach the repository.
   (generated once with Sparkle's `generate_keys`) and, base64-encoded, in the
   repository secret `SPARKLE_PRIVATE_KEY`. It is never committed, never printed
   in a workflow log, and never passed on a command line where it would show up
-  in `ps`. The release workflow writes it to a temporary file for
+  in `ps`. The release workflow writes it to a file under `$RUNNER_TEMP` for
   `generate_appcast --ed-key-file` and deletes it afterwards.
 - The **public key** is committed, as `SUPublicEDKey` in
-  `Sources/Steno/Resources/Info.plist`. It currently holds the placeholder
-  `REPLACE_WITH_SPARKLE_PUBLIC_KEY`; the first release replaces it with the real
-  key. Once shipped, the key cannot be rotated without breaking updates for
-  everyone still on an older build — treat it as permanent.
-- Back up the private key. Losing it means every existing installation stops
-  being able to update, and the only fix is asking users to reinstall by hand.
+  `Sources/Steno/Resources/Info.plist`. Once shipped it cannot be rotated
+  without breaking updates for everyone still on an older build — treat it as
+  permanent.
+- **Back up the private key.** Export it with
+  `generate_keys -x ~/steno-sparkle.key` from Sparkle's tools (resolved under
+  `build/SourcePackages/artifacts/sparkle/Sparkle/bin/` after a build), and keep
+  the file somewhere that is not this repository. Losing it means every existing
+  installation stops being able to update and the only fix is asking users to
+  download and install the new version by hand.
+- A build whose `SUPublicEDKey` is still the placeholder starts no updater at
+  all: `UpdaterController` checks that the key is 44 base64 characters decoding
+  to 32 bytes, logs one line if it is not, and leaves the update actions
+  disabled. Sparkle's own answer to a misconfigured bundle is an alert telling
+  the user to contact the developer, which is not what a pre-release build
+  should do.
+
+### Code signing
 
 Code signing is ad-hoc (`CODE_SIGN_IDENTITY: "-"`) until a Developer ID exists.
 The release workflow signs with a Developer ID and notarizes automatically once
-the secrets `DEVELOPER_ID_P12_BASE64`, `APPLE_ID`, `APPLE_TEAM_ID`, and
-`APPLE_APP_PASSWORD` are present, and falls back to ad-hoc when they are not.
+the secrets `DEVELOPER_ID_P12_BASE64`, `DEVELOPER_ID_P12_PASSWORD`,
+`APPLE_TEAM_ID`, `APPLE_ID`, and `APPLE_APP_PASSWORD` are present, and falls
+back to ad-hoc when they are not. No code changes either way.
+
+One thing does change, and the workflow handles it: an ad-hoc build is built
+with `Config/Steno-adhoc.entitlements`, which adds
+`com.apple.security.cs.disable-library-validation`. Under the hardened runtime a
+process may load only code signed by its own team or by Apple, and two ad-hoc
+signatures share no team — without the exception the app cannot load its own
+embedded `Sparkle.framework` and dies before `main`. With a Developer ID over
+both, the exception is unnecessary and the workflow uses the strict
+`Config/Steno.entitlements` instead. Keep the two files otherwise identical.
 
 ## Scope
 

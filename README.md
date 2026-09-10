@@ -64,14 +64,47 @@ signal.
 
 ## Installation
 
-*Coming with the first release (M7).* Steno will be distributed as a zip
-attached to a [GitHub release](https://github.com/maxnuglisch21m/steno/releases),
-with in-app updates via Sparkle.
+Download `Steno-x.y.z.zip` from the
+[releases page](https://github.com/maxnuglisch21m/steno/releases), unzip it, and
+move `Steno.app` to `/Applications`. Steno has no Dock icon: after launching it,
+look for the microphone in the menu bar.
 
 Until a Developer ID certificate is in place, builds are signed ad-hoc and are
-not notarized. macOS will refuse to open such an app on the first try; use
-**System Settings → Privacy & Security → Open Anyway**, or right-click the app
-and choose **Open**.
+not notarized, so macOS refuses to open the app on the first try — "Steno kann
+nicht geöffnet werden, weil Apple es nicht auf Schadsoftware überprüfen konnte".
+That is Gatekeeper reporting the missing certificate, not a verdict on the app.
+To get past it once:
+
+1. Try to open the app and dismiss the warning.
+2. **System Settings → Privacy & Security**, scroll to Security, and press
+   **Öffnen trotzdem** ("Open Anyway") next to the message about Steno.
+3. Confirm in the dialog that follows.
+
+macOS remembers the decision; later versions installed through the in-app
+updater do not ask again, because Sparkle strips the quarantine flag from an
+update it has verified itself.
+
+## Updates
+
+Steno updates itself through [Sparkle](https://sparkle-project.org), reading an
+appcast attached to every GitHub release:
+
+```
+https://github.com/maxnuglisch21m/steno/releases/latest/download/appcast.xml
+```
+
+It checks once a day, and on demand from **Nach Updates suchen …** in the menu
+or **Jetzt suchen** in **Einstellungen → Updates**. The same tab shows the
+installed version and build number, when the last check happened, and switches
+the daily check off if you would rather look yourself. Nothing is downloaded or
+installed without confirming it.
+
+Every update is verified against an EdDSA public key built into the app
+(`SUPublicEDKey` in `Info.plist`) before it is installed. A release the holder
+of the private key did not sign cannot be installed, whoever produced it — which
+is what makes distributing an unnotarized app over HTTPS reasonable. Release
+candidates (`v0.1.0-rc.1`) are published as GitHub prereleases and never appear
+in the feed, because `releases/latest` resolves to the newest stable release.
 
 ## The menu
 
@@ -86,7 +119,7 @@ Aufnahme stoppen                ⌥⌘S   (only while recording)
 Letztes Meeting im Finder zeigen
 Ordner öffnen
 —
-Nach Updates suchen …                 (from the first release onwards)
+Nach Updates suchen …
 Einstellungen …                  ⌘,
 Beenden                          ⌘Q
 ```
@@ -488,7 +521,7 @@ tab; the rest are the additions the plan accepted.
 | **Screenshots** | minimum interval and change threshold, each for a normal display and for the display holding the pointer · maximum image edge · JPEG quality · anchor-frame interval |
 | **Transkription** | ASR version (Parakeet v3 / v2) · expected language (Deutsch / Englisch / Automatisch) · model status with download progress · download button · reveal the model folder |
 | **Regeln** | watchlist of bundle IDs, validated on entry · rules table (app · title pattern · regex · never/ask/always · on/off) · read calendar titles, off by default |
-| **Updates** | check for updates automatically · check now |
+| **Updates** | check for updates automatically · check now · date of the last check · installed version and build · the feed URL |
 
 Everything is stored as one JSON blob under a single `UserDefaults` key, and
 decoding falls back per key, so a settings file written by an older build keeps
@@ -642,14 +675,15 @@ instructions from its command line.
 
 ```
 project.yml                 XcodeGen project definition
-Makefile                    gen · test · build · run · clean
+Makefile                    gen · test · build · run · release · bump · clean
 Packages/StenoCore/         pure logic: merger, gate, naming, meta, WAV header, rules
 Sources/Steno/              the app: App · Audio · Detection · Screenshots ·
                             Transcription · Storage · Settings · System · Update
-Config/Steno.entitlements   audio input; not sandboxed
+Config/Steno.entitlements   audio input; not sandboxed (Steno-adhoc.entitlements
+                            adds the library-validation exception ad-hoc builds need)
 Tests/StenoTests/           thin app-hosted tests
 scripts/                    verify-recording.sh (specification §11.8/§11.11) ·
-                            changelog-extract.sh (release helpers follow in M7)
+                            changelog-extract.sh · release.sh · bump-version.sh
 docs/SPEC.md                the specification this implements
 docs/FORMAT.md              the on-disk contract downstream tools read
 ThirdPartyLicenses/         FluidAudio (Apache-2.0) · Sparkle (MIT)
@@ -657,27 +691,63 @@ ThirdPartyLicenses/         FluidAudio (Apache-2.0) · Sparkle (MIT)
 
 ## Releasing
 
-The pipeline itself lands in M7. The shape of it: update `CHANGELOG.md` so the
-version has its own `## [x.y.z]` section, bump `MARKETING_VERSION` in
-`project.yml`, then push a `vx.y.z` tag. A workflow builds, signs, packages,
-generates the Sparkle appcast, and creates the GitHub release with the zip, the
-appcast, and that changelog section as the notes. A release without its section
-fails before it publishes anything —
-`scripts/changelog-extract.sh x.y.z` is what checks that.
+A tag is the whole trigger. `scripts/bump-version.sh` prepares one and
+`.github/workflows/release.yml` reacts to it:
 
-The full procedure, including how the Sparkle signing key is handled, is in
-[CONTRIBUTING.md](CONTRIBUTING.md#releasing).
+```sh
+make bump VERSION=0.2.0        # changelog section, project.yml, commit, tag
+git push origin main
+git push origin v0.2.0         # this is what publishes
+```
+
+The workflow takes the version from the tag and the build number from
+`git rev-list --count HEAD`, builds Release, packages `Steno.app` with `ditto`,
+generates the Sparkle appcast, and creates the GitHub release with the zip,
+`appcast.xml`, and the changelog section as its notes. A release whose version
+has no `## [x.y.z]` section in `CHANGELOG.md` fails before anything is
+published; `scripts/changelog-extract.sh x.y.z` is what checks that. A tag with
+a pre-release part — `v0.2.0-rc.1` — is published as a prerelease, so it stays
+out of `releases/latest` and out of the update feed.
+
+`make release VERSION=0.2.0` runs the same build and packaging locally and
+publishes nothing, which is the cheap way to find out whether a release would
+build.
+
+### Repository secrets
+
+| Secret | Required | What it does |
+|---|---|---|
+| `SPARKLE_PRIVATE_KEY` | for updates | The EdDSA private key, base64. Without it the release is published without an appcast and the in-app updater never sees it. |
+| `DEVELOPER_ID_P12_BASE64` | optional | Developer ID Application certificate and key, as a base64 `.p12`. Absent means ad-hoc signing. |
+| `DEVELOPER_ID_P12_PASSWORD` | with the above | Password of that `.p12`. |
+| `APPLE_TEAM_ID` | optional | Team identifier, used for signing and notarization. |
+| `APPLE_ID` | optional | Apple ID for notarization. |
+| `APPLE_APP_PASSWORD` | optional | App-specific password for that Apple ID. |
+
+Notarization only runs when the last three are present alongside the
+certificate. Everything else degrades quietly: no certificate means an ad-hoc
+signature, no notary credentials means an unnotarized zip, no Sparkle key means
+a release without a feed and a notice in the run's log saying so.
 
 ### Adding a Developer ID later
 
 Until an Apple Developer ID certificate exists, builds are signed ad-hoc
 (`CODE_SIGN_IDENTITY: "-"`) and are not notarized, which is why the first launch
-needs the Gatekeeper detour above. Nothing needs to be rewritten to change that:
-add the repository secrets `DEVELOPER_ID_P12_BASE64`, `APPLE_ID`,
-`APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD`, and the release workflow signs with
-the certificate and notarizes automatically, falling back to ad-hoc when they are
-absent. Sparkle updates keep working across the switch, because they are verified
-by the EdDSA key rather than by the code signature.
+needs the Gatekeeper detour above. **Nothing in the code changes when one
+arrives** — add the secrets in the table and the next release signs, notarizes,
+and staples itself.
+
+One build setting changes with them, and the workflow does it: an ad-hoc build
+uses `Config/Steno-adhoc.entitlements`, which adds
+`com.apple.security.cs.disable-library-validation`. The hardened runtime lets a
+process load only code signed by its own team or by Apple, and two ad-hoc
+signatures share no team, so without that exception the app cannot load its own
+embedded `Sparkle.framework` and dies before `main`. Signed with one
+certificate, app and framework are the same team, the exception is unnecessary,
+and the workflow passes the strict `Config/Steno.entitlements` instead.
+
+Sparkle updates keep working across the switch, because they are verified by the
+EdDSA key rather than by the code signature — the same key before and after.
 
 ## Dependencies
 
@@ -734,8 +804,8 @@ These are properties of the approach, not bugs to be papered over:
 | M3 | Meeting detection, suggestion popup, auto-stop, rules | **done** |
 | M4 | Screenshots across all displays | **done** |
 | M5 | ASR + diarization + merge | **done** |
-| M6 | Crash and interruption robustness | planned |
-| M7 | Release pipeline and in-app updates | planned |
+| M6 | Crash and interruption robustness | **done** |
+| M7 | Release pipeline and in-app updates | **done** |
 
 The acceptance tests need real meetings and are listed in `docs/SPEC.md` §11.
 

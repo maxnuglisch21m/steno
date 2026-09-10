@@ -13,6 +13,45 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **In-app updates (M7).** Steno checks GitHub for a newer version once a day and on
+  demand, through Sparkle. "Nach Updates suchen …" in the menu and "Jetzt suchen" in
+  Settings → Updates both ask now; the tab also shows the installed version and build,
+  when the last check was, and where the feed is read from. Every update is verified
+  against an EdDSA public key in the app bundle before it is installed, so a release
+  nobody holding the private key produced cannot be installed by anybody.
+- **`UpdaterController`.** The updater is only started when the bundle carries a
+  plausible public key — 44 base64 characters decoding to 32 bytes, and not the
+  placeholder. Sparkle answers a misconfigured bundle with an alert telling the user to
+  contact the developer, a few seconds after launch and unprompted, which is right for a
+  shipped app and wrong for a build made before the first release. Such a build now logs
+  one line and leaves both update actions disabled with "Update-Feed noch nicht
+  konfiguriert" instead.
+- **The release pipeline.** `.github/workflows/release.yml` reacts to a `v*` tag: the
+  version comes from the tag, the build number from `git rev-list --count HEAD`, the
+  release notes from the changelog section for that version — a missing section stops
+  the run before anything is published. It builds Release, packages the app with
+  `ditto`, signs the appcast with the key from a repository secret, and creates the
+  GitHub release with the zip and `appcast.xml` attached. A tag with a pre-release part
+  is published as a prerelease, which keeps release candidates out of
+  `releases/latest` and therefore out of the feed the shipped app reads. Reruns through
+  `workflow_dispatch` replace a release's assets rather than failing.
+- **Developer ID and notarization, when they exist.** Signing is ad-hoc unless the
+  repository has `DEVELOPER_ID_P12_BASE64`, and notarization only runs with `APPLE_ID`,
+  `APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD` alongside it. Nothing in the code changes
+  when a certificate arrives — only the secrets.
+- **`scripts/release.sh` and `scripts/bump-version.sh`.** The first builds and packages
+  a release locally with the same flags the workflow uses, and publishes nothing. The
+  second cuts a version: the collected `## [Unreleased]` notes become a dated section, a
+  fresh empty one is opened above it, the comparison links are rewritten,
+  `MARKETING_VERSION` is bumped, both files are committed, and the annotated tag is
+  created. It never pushes — the tag reaching the remote is what publishes a release, so
+  that stays a separate, deliberate command. `make release VERSION=…` and
+  `make bump VERSION=…` are the front doors.
+- **`scripts/changelog-extract.sh --prerelease-fallback`.** A release candidate is cut
+  from whatever is in `## [Unreleased]`, so it may use that section when it has none of
+  its own. A final release may not: shipping 1.2.3 with notes headed "Unreleased" is the
+  mistake the missing-section check exists to catch.
+
 - **Launch-time recovery (M6).** Specification §6 says `state` is written continuously
   "damit ein Absturz erkennbar ist und der Ordner beim nächsten Start weiterverarbeitet
   werden kann". `RecoveryScanner` is the second half of that sentence. Before detection
@@ -337,6 +376,13 @@ release notes, and fails if it is missing.
 
 ### Changed
 
+- **Ad-hoc builds carry a library-validation exception.** `Config/Steno.entitlements`
+  is now the file for a build signed with a Developer ID;
+  `Config/Steno-adhoc.entitlements` adds `com.apple.security.cs.disable-library-validation`
+  and is what `project.yml` points at, because that is how every build is signed today.
+  The release workflow switches back to the strict file as soon as a certificate is
+  available, so a shipped, notarized app will not carry an entitlement it does not need.
+
 - **A recording with no speech in it is `done`, not `failed`.** FluidAudio's offline
   diarizer throws `noSpeechDetected` rather than returning nothing, and a room where
   nobody spoke, a call joined and left again, or a channel that captured hold music are
@@ -395,6 +441,15 @@ release notes, and fails if it is missing.
   it, so the microphone-mode hint stays readable for the whole recording.
 
 ### Fixed
+
+- **The Release build could not start at all.** The hardened runtime turns on library
+  validation, which only lets a process load code signed by its own team or by Apple.
+  Two ad-hoc signatures have no team, and are therefore not the same team: dyld refused
+  to map the app's own `Sparkle.framework` out of its own bundle — "mapping process and
+  mapped file (non-platform) have different Team IDs" — and the app died before `main`.
+  Debug builds were unaffected, which is why it survived six milestones: they are not
+  hardened. Found by launching a Release build for the first time, while preparing the
+  first release.
 
 - `kAudioAggregateDeviceTapAutoStartKey` is **off**, unlike in AudioCap. With it on,
   the aggregate device's callback only runs while the tap is running, so a tap on an

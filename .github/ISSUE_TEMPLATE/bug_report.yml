@@ -41,9 +41,28 @@ body:
   - type: input
     id: steno-version
     attributes:
-      label: Steno version
-      description: Menu bar → Settings → Updates, or the version shown in Finder's Get Info.
-      placeholder: "0.1.0 (1)"
+      label: Steno version and build
+      description: >-
+        Einstellungen → Updates shows both ("Installierte Version"), as does
+        Finder's Get Info. The build number matters: two zips can carry the same
+        version.
+      placeholder: "0.1.0 (18)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: update-channel
+    attributes:
+      label: How this copy was installed
+      description: >-
+        Release candidates and builds made from source can differ from a
+        published release, which is worth knowing before anything else is
+        investigated.
+      options:
+        - Downloaded from a release, updated in-app (Sparkle)
+        - Downloaded from a release, never updated
+        - Release candidate (a version with -rc in it)
+        - Built from source
     validations:
       required: true
 
