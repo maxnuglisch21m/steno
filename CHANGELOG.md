@@ -13,6 +13,56 @@ release notes, and fails if it is missing.
 
 ### Added
 
+- **Launch-time recovery (M6).** Specification §6 says `state` is written continuously
+  "damit ein Absturz erkennbar ist und der Ordner beim nächsten Start weiterverarbeitet
+  werden kann". `RecoveryScanner` is the second half of that sentence. Before detection
+  starts, it walks one level of the recording folder: a folder still saying `recording`
+  has its WAV header recomputed from the file's length and rewritten in place, a
+  half-written last line of `screens.jsonl` cut off, `ended` and `duration` derived from
+  the newest file in it, `screenshots` counted, `stopReason: crash` written, and is then
+  moved to `transcribing` and queued. One that captured nothing becomes `failed` with a
+  reason. One saying `transcribing` is queued again. `done` and `failed` are left alone.
+  Every step is logged. The menu says it once: "1 unterbrochenes Meeting wird
+  nachverarbeitet".
+- **`StenoCore.RecoveryPolicy`.** The decision itself — which of those five things a
+  folder gets — is a pure function of the folder's state, its age, its lock, whether it
+  has audio, and how many attempts it has had. It is a table with a test rather than a
+  sequence of file-system calls, which is the only way the precedence between the rules
+  is checkable at all.
+- **`.steno-lock`.** A recording session now writes a hidden lock naming its process and
+  the moment that process started, and removes it when capture ends. A folder locked by a
+  live process is never touched by a recovery scan; one locked by a process that is gone
+  is exactly what a crash leaves. The start time is there because PIDs are reused: after
+  a reboot the number alone would make a stale lock look alive for ever. A folder whose
+  newest file is under ten seconds old is skipped as well, as a second line of defence.
+  Documented in `docs/FORMAT.md`.
+- **A WAV header that keeps up while recording.** `WAVWriter` rewrites the RIFF and
+  `data` sizes in the open file every ten seconds, through a second descriptor at fixed
+  offsets. It is not what makes an interrupted recording recoverable — the scan above is
+  — but it means the file is playable *before* the next launch. Measured: after a crash
+  twelve seconds into a recording, `afinfo` reports 10.1 s instead of nothing, and the
+  scan then restores the full 12.0 s.
+- **`stopReason: crash`.** A new value in `meta.json`, written by the recovery pass for a
+  recording nobody was there to end. It is the one stop reason whose `ended` is inferred
+  — from file modification times — rather than observed, and `docs/FORMAT.md` says so:
+  `duration` is a lower bound there, not a measurement.
+- **Sprache / Language setting.** **Einstellungen → Transkription → Sprache**: Deutsch
+  (default), Englisch, or Automatisch. It reaches
+  `AsrManager.transcribe(_:decoderState:language:)` for both channels, where Parakeet
+  v3's script-aware token filter uses it to pass over candidates written in the wrong
+  script. `Automatisch` sends no hint; a tag the recognizer does not know is dropped
+  rather than guessed at, because filtering for the wrong script would throw away the
+  right words.
+- **`SyntheticRecorder` and `--crash-after`** (debug builds). A recorder that writes a
+  440 Hz tone — 880 Hz on channel 1 of an `online` recording — through the real
+  `WAVWriter` with no hardware, and dies mid-write on command. It exists because
+  verifying crash recovery needs a real crash, and killing a process that is inside Core
+  Audio leaves a tap behind in `coreaudiod` that wedges every recording afterwards.
+- **`--root` and `--defaults-suite`** (debug builds). A recording folder and a
+  `UserDefaults` suite for one process only, neither persisted. Two copies of Steno share
+  a bundle identifier, and without these a test run writes into the recording folder and
+  the settings of whichever copy is doing real work. `--recover-and-quit` runs the
+  recovery scan, waits for the queue, prints what every folder ended up as, and quits.
 - **Transcription (M5).** A recording that stops now moves to `state: transcribing`
   and goes into a serial queue — one meeting at a time, in the background, with the
   step and the progress in the menu-bar ring. `audio.wav` → one 16 kHz mono work file
@@ -286,6 +336,26 @@ release notes, and fails if it is missing.
   `--open-onboarding`, so the flow can be exercised without hardware.
 
 ### Changed
+
+- **A recording with no speech in it is `done`, not `failed`.** FluidAudio's offline
+  diarizer throws `noSpeechDetected` rather than returning nothing, and a room where
+  nobody spoke, a call joined and left again, or a channel that captured hold music are
+  all recordings whose correct transcript has no speakers in it. They now produce an
+  empty transcript and finish normally.
+- **The transcription queue waits for the models instead of failing.** A folder queued
+  on a Mac where the models cannot be prepared — not downloaded yet, no network to fetch
+  them over — no longer spends one of its three attempts on it: the attempt is given
+  back, the folder stays queued, and the queue picks itself up when the models arrive.
+  Without it, a recovery at launch on a Mac whose model download has not happened would
+  burn all three attempts before anybody could do anything about it.
+- **Sparkle's version is read off the framework** rather than written down next to it, so
+  the string in the settings window and in bug reports cannot drift from the build.
+  FluidAudio has no bundle in the app and exposes no version constant, so it stays a
+  literal kept in step with `project.yml`'s exact pin — noted where it is declared.
+- **`scripts/verify-recording.sh`** checks `stopReason` against the documented set,
+  reports a recording finished by the recovery pass as a note, and accepts a
+  `.steno-lock` only while the process named in it is alive — a lock left behind by a
+  process that is gone is a folder that has not been recovered yet, and fails the check.
 
 - **A finished recording is `transcribing`, not `done`.** `RecordingCoordinator` hands
   the folder to the queue, which is what writes the transcript and moves it to `done`.

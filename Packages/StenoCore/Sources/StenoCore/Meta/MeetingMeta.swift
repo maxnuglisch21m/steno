@@ -77,6 +77,16 @@ public enum MeetingStopReason: String, Codable, Sendable, Hashable, CaseIterable
     case sleep
     /// The input device disappeared, or capture was ended by the system.
     case deviceLost
+    /// Nothing ended it: the app died mid-recording and the folder was finished by the
+    /// recovery scan on the next launch.
+    ///
+    /// Written by nobody who was there — a crash leaves no code running to record
+    /// anything — so it is set afterwards, from the outside, by the pass that repairs
+    /// the WAV header and derives `ended` from the newest file's modification time.
+    /// It is therefore the one stop reason whose `ended` is an inference rather than an
+    /// observation, and the one that says the audio may be a second or two short of
+    /// what the meeting actually was.
+    case crash
 }
 
 /// The audio input the recording used, and the microphone mode it was in.

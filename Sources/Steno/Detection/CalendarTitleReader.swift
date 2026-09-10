@@ -20,6 +20,27 @@ import Foundation
 ///    worst possible moment, and one that appears at launch is worse still.
 ///
 /// `authorizationStatus` is a read, never a prompt.
+///
+/// **Nothing here runs at launch, and it was checked.** `import EventKit` links
+/// EventKit, which in turn links Contacts and `TCC.framework`, so the obvious worry is
+/// that merely loading the framework makes `tccd` compute a prompting policy for
+/// Calendar and Contacts before the user has agreed to anything. Measured on macOS 26.6
+/// with
+///
+/// ```sh
+/// log show --predicate 'process == "tccd"' --start "<launch>" | grep de.21m.steno
+/// ```
+///
+/// across a direct launch, a Launch Services launch, and a launch with the settings
+/// window open: the only services that appear are `kTCCServiceMicrophone`,
+/// `kTCCServiceAudioCapture`, `kTCCServiceScreenCapture`, and `kTCCServiceListenEvent`.
+/// No `kTCCServiceAddressBook`, no `kTCCServiceCalendar`. Those two do appear — twice
+/// per run — when the app is launched as an XCTest host, where the injected test
+/// frameworks are what touch Contacts; that is the test rig, not Steno, and no shipped
+/// build ever loads them.
+///
+/// So the two gates below are the whole of it, and `&&` short-circuiting is load
+/// bearing: with the setting off, `authorizationStatus` is never even asked.
 @MainActor
 enum CalendarTitleReader {
     /// How far either side of "now" an event may sit and still count as the meeting

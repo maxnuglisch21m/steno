@@ -16,22 +16,39 @@ final class RecordingSession {
 
     var metaURL: URL { folder.appendingPathComponent(RecordingStore.metaFileName) }
 
-    /// Creates the folder and writes the first `meta.json`.
+    /// Creates the folder, writes the first `meta.json`, and claims the folder with a
+    /// `.steno-lock` naming this process.
+    ///
+    /// The lock is what lets a second Steno — the user's own copy next to one being
+    /// tested — tell a live recording apart from a crashed one at launch, instead of
+    /// repairing a WAV that is still being written to. It is removed by
+    /// `releaseLock()` when the folder is finished.
     init(folder: URL, meta: MeetingMeta, fileManager: FileManager = .default) throws {
         self.folder = folder
         self.meta = meta
         self.fileManager = fileManager
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         try writeMeta()
+        MeetingLock.write(.current(app: meta.app), in: folder)
         Log.storage.info("recording folder created: \(folder.lastPathComponent, privacy: .public)")
     }
 
-    /// Opens an existing folder, for the crash recovery scan in M6.
+    /// Opens an existing folder, for the crash recovery scan (M6) and the transcription
+    /// queue. Writes no lock: neither of them is recording.
     init(existing folder: URL, fileManager: FileManager = .default) throws {
         self.folder = folder
         self.fileManager = fileManager
         let data = try Data(contentsOf: folder.appendingPathComponent(RecordingStore.metaFileName))
         self.meta = try MeetingMeta.decode(from: data)
+    }
+
+    /// Gives up the claim on the folder. Idempotent.
+    ///
+    /// Called once capture has ended, whatever the outcome — a folder past `recording`
+    /// is nothing the recovery scan would touch anyway, so the lock has done its job by
+    /// then and leaving it would only make the folder look owned to a reader.
+    func releaseLock() {
+        MeetingLock.remove(in: folder)
     }
 
     /// Mutates the metadata and writes it out. Both or neither: a failed write leaves

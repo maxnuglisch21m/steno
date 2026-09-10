@@ -413,7 +413,48 @@ kompiliert …") and warms the models once right after the download, so the firs
 meeting is not the thing that pays for it.
 
 Missing models never block a recording. Capture happens now; transcription happens
-afterwards and can wait for a download.
+afterwards and can wait for a download — literally: a meeting queued on a Mac where the
+models cannot be prepared yet stays queued, without using up any of its three attempts,
+and is picked up the moment they arrive.
+
+### If Steno stops mid-recording
+
+A crash, a kill, a Mac that lost power: capture stops, and nothing is there to close the
+files. That case is designed for rather than hoped against.
+
+`meta.json` is rewritten at every state change, so a folder still saying
+`state: recording` is a recording that was interrupted. `audio.wav` is written straight
+through as it arrives — nothing is buffered — so the samples are on disk; what is
+missing is the header, which a WAV only finalizes when the file is closed. Steno
+refreshes those two numbers in the open file every ten seconds anyway, so an interrupted
+recording is usually already playable; what is lost is at most the last ten seconds of
+the header, never of the audio.
+
+**The next launch finishes the folder.** Before detection starts, Steno scans the
+recording folder one level deep:
+
+- a folder saying `recording` gets its WAV header recomputed from the file's length and
+  rewritten in place, a half-written last line of `screens.jsonl` cut off, `ended` and
+  `duration` derived from the newest file in it, `stopReason: crash`, and is then queued
+  for transcription like any other finished recording;
+- one that captured nothing at all becomes `failed`, saying so;
+- one saying `transcribing` is queued again — three times, and then it is given up on
+  and marked `failed`, so a meeting that brings the app down cannot make every launch
+  crash;
+- `done` and `failed` folders are left alone. **Letztes Meeting erneut verarbeiten** in
+  the menu is the way to retry one, and the one path that resets the attempt count.
+
+The menu says what happened once, quietly: "1 unterbrochenes Meeting wird
+nachverarbeitet".
+
+Only the header is ever rewritten — never the samples — so a three-hour recording is
+repaired as fast as a one-minute one.
+
+**Two Stenos on one Mac.** While a recording runs, its folder holds a `.steno-lock`
+naming the process and the moment it started. A folder locked by a process that is still
+alive is never touched by anyone else's recovery scan, and neither is a folder whose
+newest file is less than ten seconds old. That is what makes it safe to run a second
+copy — a build under test, say — while the first is recording a real meeting.
 
 ### Limits worth knowing before you read a transcript
 
@@ -429,8 +470,11 @@ wherever the output is being read:
   can judge them instead of trusting a smoothed-over guess.
 - **`UNKNOWN` is honest.** A word no diarization segment covers is not guessed at.
 - **`ME` only exists in `online` mode**, where channel 1 physically is you.
-- **No language hint is passed.** v3 detects the language itself, and on a short
-  utterance after silence it can pick the wrong one.
+- **The language hint is a hint.** **Einstellungen → Transkription → Sprache** tells
+  v3 which script to expect (Deutsch by default, Englisch, or Automatisch — no hint at
+  all). It steers the decoder away from wrong-script lookalikes; it does not stop the
+  model recognizing another language, and on a short utterance after silence it can
+  still pick the wrong one.
 
 ## Settings
 
@@ -442,7 +486,7 @@ tab; the rest are the additions the plan accepted.
 | **Allgemein** | recording folder (with a picker and a reveal button) · start at login · notification when a transcript is finished · show the onboarding again · version |
 | **Aufnahme** | `onsite` input device (every `AVCaptureDevice`, refreshed on hot-plug) · auto-stop delay · ask for the speaker count · audio archive format (AAC / FLAC / WAV) · include the meeting title in the folder name |
 | **Screenshots** | minimum interval and change threshold, each for a normal display and for the display holding the pointer · maximum image edge · JPEG quality · anchor-frame interval |
-| **Transkription** | ASR version (Parakeet v3 / v2) · model status with download progress · download button · reveal the model folder |
+| **Transkription** | ASR version (Parakeet v3 / v2) · expected language (Deutsch / Englisch / Automatisch) · model status with download progress · download button · reveal the model folder |
 | **Regeln** | watchlist of bundle IDs, validated on entry · rules table (app · title pattern · regex · never/ask/always · on/off) · read calendar titles, off by default |
 | **Updates** | check for updates automatically · check now |
 
@@ -558,7 +602,29 @@ open build/Build/Products/Debug/Steno.app --args --download-models
 # resulting state and the first lines of transcript.md.
 open build/Build/Products/Debug/Steno.app --args \
   --transcribe ~/Meetings/2026-09-09_1430_Vorort
+
+# The crash test (M6), in two halves. --root and --defaults-suite keep the run out of
+# the real recording folder and out of the real settings, so it cannot disturb a copy
+# of Steno that is recording a meeting at the same time. --synthetic-recorder writes a
+# 440 Hz tone (880 Hz on channel 1 of an online recording) through the real WAV writer
+# with no hardware at all, and --crash-after calls _exit(0) in the middle of it: no
+# close, no flush, a stale header and a lock file left behind — a real crash, without
+# killing a process that is inside Core Audio.
+Steno.app/Contents/MacOS/Steno \
+  --root /tmp/m6/Meetings --defaults-suite de.21m.steno.m6 \
+  --simulate-recording 30 onsite --synthetic-recorder --crash-after 12
+
+# Then the recovery: run the launch scan, wait for the queue, print what every folder
+# ended up as, quit. Wait ten seconds first — a folder written more recently than that
+# is deliberately left alone.
+Steno.app/Contents/MacOS/Steno \
+  --root /tmp/m6/Meetings --defaults-suite de.21m.steno.m6 --recover-and-quit
 ```
+
+`--root` and `--defaults-suite` combine with every other argument above and are worth
+using with all of them: two copies of Steno share a bundle identifier, and without them
+a test run writes into the recording folder and the settings of whichever copy is doing
+real work.
 
 The results are written to stderr and to the unified log, so a run can be checked
 without looking at the screen:

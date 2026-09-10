@@ -79,6 +79,25 @@ public struct TranscriptionQueueState: Codable, Sendable, Equatable {
         return entry
     }
 
+    /// Gives the head its attempt back, for a run that never really started.
+    ///
+    /// An attempt is meant to count a try at *this folder*: three failures and it is
+    /// given up on, which is what stops a folder that crashes the app from putting the
+    /// app into a relaunch loop. A run that stopped because the models are not on the
+    /// Mac yet tried nothing about the folder, and counting it would use the folder's
+    /// three attempts up on a Mac where no attempt was ever possible.
+    ///
+    /// - Returns: whether `path` was the head and had an attempt to give back.
+    @discardableResult
+    public mutating func refundHead(_ path: String) -> Bool {
+        guard var entry = entries.first, entry.path == path, entry.attempts > 0 else {
+            return false
+        }
+        entry.attempts -= 1
+        entries[0] = entry
+        return true
+    }
+
     /// Takes a folder out of the queue, wherever it is.
     @discardableResult
     public mutating func remove(_ path: String) -> Bool {

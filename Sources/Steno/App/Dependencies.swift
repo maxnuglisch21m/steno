@@ -30,6 +30,30 @@ enum Dependencies {
         """
     }
 
+    /// Sparkle's version, read off the framework that is actually loaded.
+    ///
+    /// Read rather than written down, because a version string that has to be kept in
+    /// step by hand is a version string that is eventually wrong — and this one appears
+    /// in bug reports, where being wrong is worse than being absent. `Sparkle.framework`
+    /// is inside the app bundle and carries its own `CFBundleShortVersionString`; the
+    /// pinned literal is only the fallback for a build where the bundle cannot be found.
+    static let sparkleVersion: String = {
+        let bundle = Bundle(for: SPUStandardUpdaterController.self)
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return version ?? pinnedSparkleVersion
+    }()
+
+    /// FluidAudio's version.
+    ///
+    /// A literal, unlike Sparkle's. FluidAudio is a static SwiftPM product rather than a
+    /// framework: it has no bundle of its own inside the app, and it exposes no version
+    /// constant to read — searched for, and there is none as of 0.15.6. `Package.resolved`
+    /// has the number but is not copied into the app. So this is kept in step with
+    /// `project.yml`'s `exactVersion` by hand, and the pin being exact is what makes that
+    /// safe: changing it is a deliberate edit in one file, which is the moment to change
+    /// this one too.
     static let fluidAudioVersion = "0.15.6"
-    static let sparkleVersion = "2.9.6"
+
+    /// What `project.yml` pins Sparkle to. Only used when the framework cannot be read.
+    static let pinnedSparkleVersion = "2.9.6"
 }

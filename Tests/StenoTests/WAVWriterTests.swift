@@ -226,4 +226,88 @@ struct WAVWriterTests {
             _ = try WAVWriter(folder: missing, channelCount: 1)
         }
     }
+
+    // MARK: - The header while the file is still open (M6)
+
+    @Test("the header of an open file reports the audio already written")
+    func refreshesTheHeaderWhileRecording() throws {
+        // The claim being tested is the one the refresh rests on: a second descriptor
+        // may write the two size fields of a file `AVAudioFile` is appending through,
+        // and `AVAudioFile` neither loses the samples nor fights over the header.
+        let folder = try Folder()
+        let writer = try WAVWriter(folder: folder.url, channelCount: 1)
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: WAVWriter.sampleRate,
+            channels: 1,
+            interleaved: true
+        )!
+        let frames: AVAudioFrameCount = 24_000
+        writer.write(Self.sine(format: format, frames: frames))
+        writer.write(Self.sine(format: format, frames: frames))
+
+        // Before the refresh: what a crash right now would leave behind, and what the
+        // recovery pass exists for.
+        let (stale, staleSize) = try Self.header(of: folder.audio)
+        #expect(stale.declaredDataSize == 0)
+        #expect(stale.validate(fileSize: staleSize).needsRepair)
+        #expect(stale.validate(fileSize: staleSize).frameCount == Int(frames) * 2)
+
+        writer.refreshHeaderNow()
+
+        // After: the file describes itself, without having been closed.
+        let (fresh, freshSize) = try Self.header(of: folder.audio)
+        #expect(fresh.declaredDataSize == UInt32(frames) * 2 * 2)
+        #expect(fresh.validate(fileSize: freshSize).isValid)
+        #expect(abs(fresh.validate(fileSize: freshSize).duration - 1.0) < 0.001)
+
+        // And AVFoundation, which is what a player and the transcription both use,
+        // opens it mid-recording and sees the right length.
+        let midRecording = try AVAudioFile(forReading: folder.audio)
+        #expect(midRecording.length == Int64(frames) * 2)
+
+        // Writing continues afterwards, and the close still produces a valid file: the
+        // refresh must not have confused `AVAudioFile` about where it was.
+        writer.write(Self.sine(format: format, frames: frames))
+        let result = writer.close()
+        #expect(result.frameCount == Int64(frames) * 3)
+
+        let (closed, closedSize) = try Self.header(of: folder.audio)
+        #expect(closed.validate(fileSize: closedSize).isValid)
+        #expect(closed.declaredDataSize == UInt32(frames) * 3 * 2)
+        let reopened = try AVAudioFile(forReading: folder.audio)
+        #expect(reopened.length == Int64(frames) * 3)
+    }
+
+    @Test("refreshing a file with nothing in it yet changes nothing")
+    func refreshOnAnEmptyFile() throws {
+        let folder = try Folder()
+        let writer = try WAVWriter(folder: folder.url, channelCount: 2)
+        writer.refreshHeaderNow()
+
+        let (header, size) = try Self.header(of: folder.audio)
+        #expect(header.declaredDataSize == 0)
+        #expect(header.validate(fileSize: size).frameCount == 0)
+        writer.close()
+    }
+
+    @Test("refreshing a closed writer is harmless")
+    func refreshAfterClose() throws {
+        let folder = try Folder()
+        let writer = try WAVWriter(folder: folder.url, channelCount: 1)
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: WAVWriter.sampleRate,
+            channels: 1,
+            interleaved: true
+        )!
+        writer.write(Self.sine(format: format, frames: 4_800))
+        let result = writer.close()
+        writer.refreshHeaderNow()
+
+        let (header, size) = try Self.header(of: folder.audio)
+        #expect(header.validate(fileSize: size).isValid)
+        #expect(header.declaredDataSize == UInt32(result.frameCount) * 2)
+    }
+
 }

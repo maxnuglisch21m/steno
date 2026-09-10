@@ -170,6 +170,43 @@ public struct ScreensIndexEntry: Codable, Sendable, Hashable {
         return entries
     }
 
+    // MARK: - Repairing a truncated index
+
+    /// How many leading bytes of a `screens.jsonl` form complete, parseable lines.
+    ///
+    /// The index is appended to and `synchronize()`d once per image, so a process that
+    /// dies mid-append leaves at most one incomplete line — usually a fragment of JSON
+    /// with no newline after it. `decode(jsonl:lenient:)` can read past that, but every
+    /// other reader in the world cannot, and the file is meant to be readable by
+    /// anything. So the recovery pass truncates the file to this length.
+    ///
+    /// A line counts as complete when it is terminated by a newline **and** parses. The
+    /// newline requirement is what makes this safe: the terminator is written in the
+    /// same `write(contentsOf:)` as the JSON, so a line that has one was written whole,
+    /// and a final line without one is a fragment even in the rare case that the
+    /// fragment happens to be valid JSON on its own.
+    ///
+    /// - Returns: a byte count in `0...data.count`. Equal to `data.count` when nothing
+    ///   needs trimming, which is the normal case.
+    public static func completeByteCount(ofJSONL data: some Collection<UInt8>) -> Int {
+        let bytes = Array(data)
+        let newline = UInt8(ascii: "\n")
+        // Where the last newline is: everything after it is an unterminated fragment.
+        guard var end = bytes.lastIndex(of: newline).map({ $0 + 1 }) else { return 0 }
+
+        // Then walk back over terminated-but-unparseable lines. A partial write can be
+        // interleaved with the newline of the line before it, which leaves a line that
+        // ends properly and still holds half a record.
+        while end > 0 {
+            let previous = bytes[0..<(end - 1)].lastIndex(of: newline).map { $0 + 1 } ?? 0
+            let line = String(decoding: bytes[previous..<end], as: UTF8.self)
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || (try? decode(line: trimmed)) != nil { return end }
+            end = previous
+        }
+        return 0
+    }
+
     private static func number(_ value: Double) -> String {
         guard value.isFinite else { return "0" }
         return String(format: "%.2f", value)

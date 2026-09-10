@@ -82,4 +82,49 @@ struct TranscriptionQueueStateTests {
         #expect(queue.remove("/m/z") == false)
         #expect(queue.paths == ["/m/a"])
     }
+
+    // MARK: - Refunding an attempt (M6)
+
+    @Test("an attempt the folder never really got is given back")
+    func refundsTheHead() {
+        var state = TranscriptionQueueState()
+        state.enqueue("/a")
+        state.enqueue("/b")
+        #expect(state.beginHead()?.attempts == 1)
+
+        let refunded = state.refundHead("/a")
+        #expect(refunded)
+        #expect(state.entries[0].attempts == 0)
+
+        // So the folder still has all three tries the next time round.
+        for expected in 1...TranscriptionQueueState.maxAttempts {
+            #expect(state.beginHead()?.attempts == expected)
+        }
+        #expect(state.beginHead() == nil)
+    }
+
+    @Test("only the head, only when it has an attempt to give back")
+    func refundsNothingElse() {
+        var state = TranscriptionQueueState()
+        state.enqueue("/a")
+        state.enqueue("/b")
+
+        // Nothing has begun yet.
+        var refunded = state.refundHead("/a")
+        #expect(refunded == false)
+
+        state.beginHead()
+        // Not the one behind it.
+        refunded = state.refundHead("/b")
+        #expect(refunded == false)
+        #expect(state.entries[1].attempts == 0)
+        // Nor a folder that is not in the queue at all.
+        refunded = state.refundHead("/c")
+        #expect(refunded == false)
+
+        var empty = TranscriptionQueueState()
+        refunded = empty.refundHead("/a")
+        #expect(refunded == false)
+    }
+
 }

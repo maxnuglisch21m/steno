@@ -229,4 +229,71 @@ struct ScreensIndexEntryTests {
     func directoryName() {
         #expect(ScreensIndexEntry.directoryName == "screens")
     }
+
+    // MARK: - Trimming a truncated index (M6)
+
+    private static func line(_ t: Double) -> String {
+        ScreensIndexEntry(t: t, file: "screens/a.jpg", display: 0, active: false, changed: 0.5)
+            .jsonLine
+    }
+
+    private static func complete(_ text: String) -> Int {
+        ScreensIndexEntry.completeByteCount(ofJSONL: Array(text.utf8))
+    }
+
+    @Test("leaves an intact index alone")
+    func trimsNothingFromAnIntactIndex() throws {
+        let text = Self.line(1) + "\n" + Self.line(2) + "\n"
+        #expect(Self.complete(text) == text.utf8.count)
+    }
+
+    @Test("cuts off an unterminated final fragment")
+    func trimsAFragment() throws {
+        let good = Self.line(1) + "\n" + Self.line(2) + "\n"
+        let text = good + "{\"t\":18.42,\"file\":\"scre"
+        let kept = Self.complete(text)
+        #expect(kept == good.utf8.count)
+
+        let repaired = String(decoding: Array(text.utf8)[0..<kept], as: UTF8.self)
+        #expect(try ScreensIndexEntry.decode(jsonl: repaired).count == 2)
+    }
+
+    @Test("cuts off a final line that ends properly and still holds half a record")
+    func trimsATerminatedFragment() throws {
+        let good = Self.line(1) + "\n"
+        let text = good + "{\"t\":18.42,\"file\":\"scre\n"
+        #expect(Self.complete(text) == good.utf8.count)
+    }
+
+    @Test("a lone fragment leaves nothing")
+    func trimsEverything() {
+        #expect(Self.complete("{\"t\":1") == 0)
+        #expect(Self.complete("") == 0)
+    }
+
+    @Test("a complete final line without a newline is still a fragment")
+    func requiresTheTerminator() {
+        // The newline is written in the same call as the JSON, so its absence means
+        // the write did not finish — whatever the bytes before it happen to parse as.
+        let text = Self.line(1) + "\n" + Self.line(2)
+        #expect(Self.complete(text) == (Self.line(1) + "\n").utf8.count)
+    }
+
+    @Test("keeps a trailing blank line rather than hunting for something to cut")
+    func keepsBlankLines() {
+        let text = Self.line(1) + "\n\n"
+        #expect(Self.complete(text) == text.utf8.count)
+    }
+
+    @Test("the kept prefix always parses strictly")
+    func keptPrefixParsesStrictly() throws {
+        let full = Self.line(1) + "\n" + Self.line(2) + "\n" + Self.line(3) + "\n"
+        let bytes = Array(full.utf8)
+        // Every possible truncation point, which is every way a crash can land.
+        for cut in 0...bytes.count {
+            let kept = ScreensIndexEntry.completeByteCount(ofJSONL: bytes[0..<cut])
+            let text = String(decoding: bytes[0..<kept], as: UTF8.self)
+            _ = try ScreensIndexEntry.decode(jsonl: text)
+        }
+    }
 }

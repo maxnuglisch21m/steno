@@ -10,10 +10,15 @@
 #   §11.11  nothing was written into the folder except the documented set.
 #
 # It also checks what §6 says `meta.json` must agree with — `screenshots` equals the
-# number of index lines, `displays` accounts for every frame — and what §5 says about
-# the transcript: `transcript.json` parses, agrees with `meta.json` about the mode,
-# names the models it was made with, has a `transcript.md` beside it, and carries a
-# `ME` speaker only in `online` mode. `meta.audio` has to name a file that is there.
+# number of index lines, `displays` accounts for every frame, `stopReason` is one of the
+# documented values — and what §5 says about the transcript: `transcript.json` parses,
+# agrees with `meta.json` about the mode, names the models it was made with, has a
+# `transcript.md` beside it, and carries a `ME` speaker only in `online` mode.
+# `meta.audio` has to name a file that is there.
+#
+# A `.steno-lock` is allowed only while the process named in it is still running — a
+# live recording. One left behind by a process that is gone is a folder the recovery
+# pass has not reached yet, and is reported as a problem.
 #
 # Usage:
 #   scripts/verify-recording.sh ~/Meetings/2026-09-09_1430_Vorort
@@ -242,6 +247,20 @@ if meta is not None:
             % (screenshots, len(entries))
         )
 
+    # §6 / docs/FORMAT.md: `stopReason` is a closed set. `crash` is the one the
+    # recovery pass writes for a recording nobody was there to end.
+    STOP_REASONS = {"manual", "auto", "sleep", "deviceLost", "crash"}
+    stop_reason = meta.get("stopReason")
+    if stop_reason is not None:
+        if stop_reason not in STOP_REASONS:
+            fail("meta.stopReason is %r, which is not a documented value" % stop_reason)
+        elif stop_reason == "crash":
+            # `ended` is inferred from file modification times there, so the audio may
+            # be a little short of the meeting. Worth saying out loud, not a violation.
+            note("this recording was interrupted and finished by the recovery pass")
+    elif meta.get("state") in ("done", "failed") and meta.get("ended") is not None:
+        note("the recording ended without a stopReason — a failed write, presumably")
+
     displays = meta.get("displays")
     if not isinstance(displays, list) or not displays:
         # A recording made without the Screen Recording permission has no displays and
@@ -299,9 +318,47 @@ KNOWN_DIRECTORIES = {"screens", "_work"}
 
 IGNORED = {".DS_Store"}
 
+# `.steno-lock` names the process that is recording into the folder. It is Steno's
+# bookkeeping rather than part of the recording, and it is removed when capture ends —
+# so one that is still here belongs to a live recording, and one whose process is gone
+# is debris the next launch's recovery pass will clear.
+LOCK_FILE = ".steno-lock"
+
+
+def lock_holder(path):
+    """The pid in a lock file if that process is still running, else None."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            pid = json.load(handle).get("pid")
+    except (ValueError, OSError, AttributeError):
+        return None
+    if not isinstance(pid, int):
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        # Alive, and not ours to signal.
+        return pid
+    except OSError:
+        return None
+    return pid
+
+
 for name in sorted(os.listdir(folder)):
     if name in IGNORED:
         note("%s is Finder's, not Steno's" % name)
+        continue
+    if name == LOCK_FILE:
+        holder = lock_holder(os.path.join(folder, name))
+        if holder is None:
+            fail(
+                "%s is left over from a process that is gone — the recording was "
+                "interrupted and has not been recovered yet" % LOCK_FILE
+            )
+        else:
+            note("%s says pid %d is recording into this folder right now" % (LOCK_FILE, holder))
         continue
     path = os.path.join(folder, name)
     if os.path.isdir(path):
@@ -325,11 +382,12 @@ for entry in entries:
 print("folder      %s" % folder)
 if meta is not None:
     print(
-        "meeting     %s · %s · %s s"
+        "meeting     %s · %s · %s s · stopped by %s"
         % (
             meta.get("mode", "?"),
             meta.get("state", "?"),
             ("%.0f" % meta["duration"]) if isinstance(meta.get("duration"), (int, float)) else "?",
+            meta.get("stopReason") or "—",
         )
     )
     for display in meta.get("displays") or []:

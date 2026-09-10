@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import StenoCore
 
 /// Streams audio buffers into `audio.wav` — 48 kHz, 16-bit PCM, one or two channels.
 ///
@@ -75,6 +76,13 @@ final class WAVWriter {
     private var failure: Error?
     private var hasLoggedFailure = false
 
+    /// The parsed header of the open file, so the periodic refresh does not re-read the
+    /// layout every ten seconds. Writer queue only.
+    private var headerLayout: WAVHeader?
+    /// When the next header refresh is due. Writer queue only.
+    private var nextHeaderRefresh: ContinuousClock.Instant = .now
+    private var hasLoggedHeaderFailure = false
+
     /// Called once, off the main actor, when a write or a conversion fails — a full
     /// disk being the case that matters. The recording is over at that point; the
     /// coordinator turns it into `state: failed`.
@@ -119,6 +127,9 @@ final class WAVWriter {
         )
         self.file = opened
         self.format = opened.processingFormat
+        self.nextHeaderRefresh = ContinuousClock.now.advanced(
+            by: .seconds(Self.headerRefreshInterval)
+        )
 
         Log.audio.notice(
             """
@@ -201,9 +212,12 @@ final class WAVWriter {
             if buffer.format.isEquivalent(to: format) {
                 try file.write(from: buffer)
                 add(frames: Int64(buffer.frameLength))
-                return
+            } else {
+                try convertAndWrite(buffer, to: file)
             }
-            try convertAndWrite(buffer, to: file)
+            // After the write, never before it: the sizes have to describe a file that
+            // is already that long.
+            refreshHeaderIfNeeded()
         } catch {
             report(error)
         }
@@ -287,6 +301,101 @@ final class WAVWriter {
         } catch {
             Log.audio.error("could not flush the converter: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    // MARK: - Keeping the header honest while recording
+
+    /// How often the RIFF and `data` sizes in the open file are brought up to date.
+    ///
+    /// The header of a WAV being written says whatever it said when the file was
+    /// opened — zero — until `AVAudioFile` is released and writes the real numbers. Kill
+    /// the app before that and an hour of audio sits in a file every reader believes is
+    /// empty. `RecoveryScanner` repairs exactly that at the next launch, so this is not
+    /// what makes an interrupted recording recoverable; it is what makes it *playable
+    /// before* the next launch — by QuickTime, by `afinfo`, by the user wondering what
+    /// happened to their meeting.
+    ///
+    /// Ten seconds costs eight bytes and one `pwrite` per ten seconds of audio and
+    /// bounds the loss to the last ten seconds even for a reader that never runs the
+    /// recovery pass.
+    static let headerRefreshInterval: TimeInterval = 10
+
+    /// Rewrites the two size fields in the file that is currently open.
+    ///
+    /// **Why a second descriptor is safe here.** `AVAudioFile` holds its own descriptor
+    /// and writes samples by appending; it touches the header only when it is opened and
+    /// when it is closed, and it keeps its own idea of the sizes in memory rather than
+    /// reading them back. So the eight bytes written here are either overwritten with
+    /// the same values at close — the clean case, where this changes nothing — or they
+    /// are the only correct values the file ever gets, which is the crash case this is
+    /// for. The samples themselves are never touched: `pwrite` at fixed offsets inside
+    /// the header, never a seek on the descriptor `AVAudioFile` is appending through.
+    ///
+    /// Verified empirically rather than assumed: `WAVWriterTests` reads the header back
+    /// mid-recording, checks it reports the frames written so far, and checks that the
+    /// file closed afterwards is still valid.
+    ///
+    /// Runs on the writer queue, after a write, so `framesWritten` and the file length
+    /// cannot disagree.
+    private func refreshHeaderIfNeeded() {
+        guard file != nil, writeFailure == nil else { return }
+        let now = ContinuousClock.now
+        guard now >= nextHeaderRefresh else { return }
+        nextHeaderRefresh = now.advanced(by: .seconds(Self.headerRefreshInterval))
+        writeHeaderSizes()
+    }
+
+    /// Brings the header up to date now rather than on the next tick.
+    ///
+    /// Synchronous on the writer queue, so that a caller reading the file afterwards
+    /// sees the result. The tests are the only caller: everything else lets the
+    /// schedule do it.
+    func refreshHeaderNow() {
+        queue.sync { writeHeaderSizes() }
+    }
+
+    /// Rewrites the two size fields. Writer queue only.
+    private func writeHeaderSizes() {
+        guard file != nil, writeFailure == nil else { return }
+        guard let size = Self.fileSize(of: url) else { return }
+        guard let header = headerLayout ?? Self.readHeader(at: url) else { return }
+        headerLayout = header
+
+        let validation = header.validate(fileSize: size)
+        guard validation.needsRepair else { return }
+
+        do {
+            let handle = try FileHandle(forUpdating: url)
+            defer { try? handle.close() }
+            try handle.seek(toOffset: 0)
+            try handle.write(contentsOf: header.repairedHeaderData(fileSize: size))
+        } catch {
+            // Once, and then never again: a header that cannot be refreshed is a
+            // recording that still has all its audio and a recovery pass to fix it.
+            guard !hasLoggedHeaderFailure else { return }
+            hasLoggedHeaderFailure = true
+            Log.audio.notice(
+                "the WAV header could not be refreshed while recording: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    /// The header of the file as it was written when the file was opened.
+    ///
+    /// Parsed once and kept: the layout — where the `data` size field sits, what the
+    /// format chunk says — does not change while a file is being appended to, and only
+    /// the two numbers do.
+    private static func readHeader(at url: URL) -> WAVHeader? {
+        guard
+            let handle = try? FileHandle(forReadingFrom: url),
+            let leading = try? handle.read(upToCount: WAVHeader.maxHeaderByteCount)
+        else { return nil }
+        try? handle.close()
+        return try? WAVHeader.parse(leading)
+    }
+
+    private static func fileSize(of url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
     }
 
     /// One reused output buffer, grown when a larger input arrives. Allocating one per

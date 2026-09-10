@@ -36,6 +36,14 @@ import StenoCore
 /// // M5: the models, and transcription of a folder that already has audio.
 /// open build/Build/Products/Debug/Steno.app --args --download-models
 /// open build/Build/Products/Debug/Steno.app --args --transcribe ~/Meetings/2026-09-09_1430_Vorort
+///
+/// // M6: the crash test. Two runs, both against a scratch root and a scratch defaults
+/// // suite, so that neither touches the copy of Steno somebody may be recording with.
+/// build/Build/Products/Debug/Steno.app/Contents/MacOS/Steno \
+///   --root /tmp/m6/Meetings --defaults-suite de.21m.steno.m6 \
+///   --simulate-recording 30 onsite --synthetic-recorder --crash-after 12
+/// build/Build/Products/Debug/Steno.app/Contents/MacOS/Steno \
+///   --root /tmp/m6/Meetings --defaults-suite de.21m.steno.m6 --recover-and-quit
 /// ```
 struct DebugLaunchArguments {
     var openSettings = false
@@ -102,10 +110,41 @@ struct DebugLaunchArguments {
     /// missing, which is the part that needs a meeting.
     var transcribeFolder: URL?
 
+    // MARK: M6
+
+    /// `--root <path>`: the recording root for this process only, never persisted.
+    ///
+    /// The reason it exists: two Stenos can run on this Mac at once — the one the user
+    /// is recording their real meetings with, and one being tested. A test run that
+    /// changed the setting would move the user's root out from under them, so the
+    /// override lives in the process and dies with it.
+    var rootFolderOverride: URL?
+    /// `--defaults-suite <name>`: which `UserDefaults` the settings and the
+    /// transcription queue live in, for the same reason.
+    var defaultsSuiteName: String?
+    /// `--synthetic-recorder`: 440/880 Hz through the real `WAVWriter`, no hardware.
+    var useSyntheticRecorder = false
+    /// `--crash-after <seconds>`: `_exit(0)` after that much audio has been written,
+    /// with nothing closed. Only the synthetic recorder honours it — see there for why
+    /// killing a real recording is not an option.
+    var crashAfter: TimeInterval?
+    /// `--recover-and-quit`: run the launch-time recovery scan, wait for the queue to
+    /// drain, print what every folder ended up as, and quit. The second half of the
+    /// crash test.
+    var recoverAndQuit = false
+
+    /// A shared parse of this process's own arguments.
+    ///
+    /// `AppEnvironment.shared` is built before `applicationDidFinishLaunching` runs, and
+    /// `--root` and `--defaults-suite` have to be in place before the settings store
+    /// reads anything — so both places read this rather than parsing twice and
+    /// disagreeing.
+    static let current = DebugLaunchArguments(CommandLine.arguments)
+
     var isActive: Bool {
         openSettings || openOnboarding || printMicrophoneMode
             || simulate != nil || simulateDetection != nil
-            || downloadModels || transcribeFolder != nil
+            || downloadModels || transcribeFolder != nil || recoverAndQuit
     }
 
     /// Whether the app's own detection may run. A simulation drives detection itself
@@ -167,6 +206,24 @@ struct DebugLaunchArguments {
                     )
                 }
                 index += 1
+            case "--root":
+                if let path = arguments[safe: index + 1] {
+                    rootFolderOverride = URL(
+                        fileURLWithPath: (path as NSString).expandingTildeInPath,
+                        isDirectory: true
+                    )
+                }
+                index += 1
+            case "--defaults-suite":
+                defaultsSuiteName = arguments[safe: index + 1]
+                index += 1
+            case "--synthetic-recorder":
+                useSyntheticRecorder = true
+            case "--crash-after":
+                crashAfter = Double(arguments[safe: index + 1] ?? "")
+                index += 1
+            case "--recover-and-quit":
+                recoverAndQuit = true
             case "--simulate-recording", "--simulate-null-recording":
                 useNullRecorder = arguments[index] == "--simulate-null-recording"
                 let seconds = Double(arguments[safe: index + 1] ?? "") ?? 3
@@ -207,6 +264,10 @@ struct DebugLaunchArguments {
                 Log.app.notice("debug: \(line, privacy: .public)")
                 FileHandle.standardError.write(Data(line.utf8))
             }
+        }
+        if recoverAndQuit {
+            runRecovery(in: environment)
+            return
         }
         if downloadModels {
             runModelDownload(in: environment)
@@ -250,8 +311,8 @@ struct DebugLaunchArguments {
         _ simulate: (seconds: Double, mode: MeetingMode),
         in environment: AppEnvironment
     ) {
-        if useNullRecorder {
-            environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
+        if let recorder = simulationRecorder {
+            environment.coordinator.useRecorderFactory(FixedRecorderFactory(recorder))
         }
         environment.coordinator.forcedTapTargetBundleId = tapTargetBundleId
         environment.coordinator.logsScreenshotDecisions = logsScreenshotDecisions
@@ -298,6 +359,74 @@ struct DebugLaunchArguments {
             FileHandle.standardError.write(Data(line.utf8))
             NSApp.terminate(nil)
         }
+    }
+
+    /// Which recorder a simulated recording writes through.
+    ///
+    /// `nil` means "leave the coordinator's own factory alone", which is the real
+    /// hardware. The synthetic one wins over `--null-recorder`: asking for both is
+    /// asking for a file, and only one of the two writes one.
+    private var simulationRecorder: (any AudioRecorder)? {
+        if useSyntheticRecorder { return SyntheticRecorder(crashAfter: crashAfter) }
+        if useNullRecorder { return NullRecorder() }
+        return nil
+    }
+
+    // MARK: - M6: recovery
+
+    /// Runs the launch-time recovery scan, waits for the queue to finish, and reports
+    /// what every folder in the root ended up as.
+    ///
+    /// The scan itself has already run — `AppEnvironment.start` does it before detection
+    /// — so this waits on the result rather than repeating it. Everything is the real
+    /// thing: the real repair, the real queue, the real models, the real `meta.json`.
+    @MainActor
+    private func runRecovery(in environment: AppEnvironment) {
+        Task { @MainActor in
+            let root = environment.settings.rootFolderURL
+            let report = environment.lastRecoveryReport
+            Self.report("recovery in \(root.stenoPath): \(report?.logDescription ?? "no scan ran")")
+            Self.report("menu line: \(report?.localizedNotice ?? "none")")
+
+            // Generously bounded: transcription of a few seconds of audio takes seconds,
+            // but a cold Core ML model takes minutes and hanging for ever would be worse
+            // than reporting nothing.
+            await Self.waitFor(seconds: 900) {
+                environment.transcription.pendingCount == 0
+                    && environment.transcription.current == nil
+            }
+            // The queue clears its entry before the last `meta.json` write lands.
+            try? await Task.sleep(for: .seconds(1))
+
+            for folder in environment.store.meetingFolders(in: root).reversed() {
+                let state = environment.store.state(of: folder)?.rawValue ?? "unreadable"
+                let lock = FileManager.default.fileExists(
+                    atPath: MeetingLock.url(in: folder).stenoPath
+                ) ? " · lock left behind" : ""
+                Self.report(
+                    """
+                    \(folder.lastPathComponent) → state \(state)\
+                    \(Self.stopReasonSummary(in: folder))\(lock)\
+                    \(Self.audioSummary(in: folder))\(Self.transcriptSummary(in: folder))
+                    """
+                )
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// " · stopReason crash · 12.3 s", or nothing when `meta.json` says neither.
+    @MainActor
+    private static func stopReasonSummary(in folder: URL) -> String {
+        guard
+            let data = try? Data(contentsOf: folder.appendingPathComponent(RecordingStore.metaFileName)),
+            let meta = try? MeetingMeta.decode(from: data)
+        else { return "" }
+        var parts: [String] = []
+        if let reason = meta.stopReason { parts.append("stopReason \(reason.rawValue)") }
+        if let duration = meta.duration { parts.append(String(format: "%.1f s", duration)) }
+        parts.append("\(meta.screenshots) screenshot(s)")
+        return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
     }
 
     // MARK: - M5: models and transcription
@@ -431,8 +560,8 @@ struct DebugLaunchArguments {
         in environment: AppEnvironment
     ) {
         let settings = environment.settings
-        if useNullRecorder {
-            environment.coordinator.useRecorderFactory(FixedRecorderFactory(NullRecorder()))
+        if let recorder = simulationRecorder {
+            environment.coordinator.useRecorderFactory(FixedRecorderFactory(recorder))
         }
         environment.coordinator.logsScreenshotDecisions = logsScreenshotDecisions
         if let autoStopDelay { settings.settings.autoStopDelay = autoStopDelay }

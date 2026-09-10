@@ -34,15 +34,19 @@ final class AppEnvironment {
     /// Sleep and the lock screen.
     private(set) var sleepLock: SleepLockObserver?
 
+    /// What the launch-time recovery scan found, for the menu and for `--recover-and-quit`.
+    private(set) var lastRecoveryReport: RecoveryScanner.Report?
+
     /// Where the coordinator gets a recorder from. The default gives `onsite`
     /// `MicRecorder` (§3b) and `online` `ProcessTapRecorder` (§3a); the tests and
     /// `--simulate-null-recording` substitute one that touches no hardware.
     let recorderFactory: any RecorderFactory
 
     init(
-        settings: SettingsStore = SettingsStore(),
+        settings: SettingsStore? = nil,
         recorderFactory: (any RecorderFactory)? = nil
     ) {
+        let settings = settings ?? Self.makeSettingsStore()
         self.settings = settings
         self.appState = AppState()
         self.store = RecordingStore()
@@ -108,11 +112,15 @@ final class AppEnvironment {
         models.asrVersion = settings.settings.asrVersion
 
         _ = store.ensureRootExists(settings.rootFolderURL)
-        refreshLastMeeting()
 
-        // Whatever the last launch did not finish. The full recovery scan of the
-        // recording root is M6; this is the half the queue already knows about.
+        // Before anything else looks at the root, and before detection can start a
+        // recording into it: specification §6 and §10's M6 — a folder still saying
+        // `recording` or `transcribing` was interrupted, and this is the launch that
+        // finishes it. The queue's own list of folders comes second, so that a folder
+        // the scan has just repaired and queued is not queued twice.
+        runRecoveryScan()
         transcription.resumePersisted()
+        refreshLastMeeting()
 
         permissions.observeActivation()
         inputDevices.startObserving()
@@ -187,6 +195,46 @@ final class AppEnvironment {
                 self.observePermissions()
             }
         }
+    }
+
+    /// Finishes what the last run did not, once, at launch.
+    ///
+    /// The result reaches the menu as a notice rather than a dialog: a meeting being
+    /// picked up again is worth saying and not worth interrupting anyone for.
+    private func runRecoveryScan() {
+        let scanner = RecoveryScanner(
+            store: store,
+            queueStore: TranscriptionQueueStore(defaults: settings.defaults)
+        )
+        let report = scanner.scan(root: settings.rootFolderURL) { [weak self] folder in
+            self?.transcription.enqueue(folder)
+        }
+        lastRecoveryReport = report
+        if let notice = report.localizedNotice { appState.notice = notice }
+    }
+
+    /// The settings store, pointed at whichever `UserDefaults` this process should use.
+    ///
+    /// In a release build there is only one answer. In a debug build `--defaults-suite`
+    /// gives a test run its own settings and its own transcription queue, so that it
+    /// cannot disturb — or be disturbed by — the copy of Steno somebody may have running
+    /// at the same time under the same bundle identifier.
+    private static func makeSettingsStore() -> SettingsStore {
+        #if DEBUG
+        let arguments = DebugLaunchArguments.current
+        let defaults = arguments.defaultsSuiteName.flatMap { UserDefaults(suiteName: $0) }
+        let store = SettingsStore(defaults: defaults ?? .standard)
+        if let suite = arguments.defaultsSuiteName {
+            Log.app.notice("debug: settings and queue in the \(suite, privacy: .public) defaults suite")
+        }
+        if let root = arguments.rootFolderOverride {
+            store.rootFolderOverride = root
+            Log.app.notice("debug: recording root overridden to \(root.stenoPath, privacy: .public)")
+        }
+        return store
+        #else
+        return SettingsStore()
+        #endif
     }
 
     // MARK: - Root folder

@@ -149,10 +149,15 @@ actor FluidASR {
     ///   - url: a work file written by `ChannelSplitter`.
     ///   - source: which channel this is. It does not reach FluidAudio — see the note
     ///     on this type — but it decides the log line and documents the call.
+    ///   - language: the language the recognizer should expect, as a BCP-47 primary
+    ///     subtag, or `nil` to let it decide. Reaches Parakeet v3's script-aware token
+    ///     filter, which passes over top-K candidates written in the wrong script; v2
+    ///     ignores it. An unrecognized tag is dropped rather than guessed at.
     ///   - progress: 0…1 while long audio is decoded, from `AsrManager`'s own stream.
     func transcribe(
         _ url: URL,
         source: AudioSource,
+        language: String? = nil,
         progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> ASRPass {
         guard let manager else { throw Failure.notLoaded }
@@ -185,7 +190,11 @@ actor FluidASR {
         }
         defer { progressTask?.cancel() }
 
-        let result = try await manager.transcribe(url, decoderState: &state)
+        let result = try await manager.transcribe(
+            url,
+            decoderState: &state,
+            language: Self.fluidLanguage(language)
+        )
         let tokens = Self.words(from: result)
 
         Log.transcription.notice(
@@ -248,6 +257,19 @@ actor FluidASR {
     static func duration(of url: URL) throws -> TimeInterval {
         let file = try AVAudioFile(forReading: url)
         return Double(file.length) / file.processingFormat.sampleRate
+    }
+
+    /// Maps a BCP-47 primary subtag onto FluidAudio's `Language`.
+    ///
+    /// Returns `nil` — "no hint" — for a tag the recognizer's filter does not know,
+    /// which is the honest answer: a filter configured for the wrong script would throw
+    /// away the right words, so an unrecognized language is better than a guessed one.
+    static func fluidLanguage(_ code: String?) -> Language? {
+        guard let code, !code.isEmpty else { return nil }
+        // The primary subtag only: `de-DE` and `de` mean the same thing to a script
+        // filter, and `Language` is spelled with the bare subtag.
+        let primary = code.split(separator: "-").first.map(String.init)?.lowercased() ?? code
+        return Language(rawValue: primary)
     }
 
     private static func name(of source: AudioSource) -> String {

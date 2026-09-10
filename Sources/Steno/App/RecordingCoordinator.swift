@@ -436,6 +436,7 @@ final class RecordingCoordinator {
         case .finished(.failure(let error)):
             Log.audio.error("recorder refused to start: \(error.localizedDescription, privacy: .public)")
             newSession.fail(reason: error.localizedDescription)
+            newSession.releaseLock()
             appState.notice = error.localizedDescription
             notifyFailure(reason: error.localizedDescription, folder: newSession.folder)
             return
@@ -444,6 +445,7 @@ final class RecordingCoordinator {
             Log.audio.error("the recorder did not answer within 15 s; giving up on this recording")
             abandon(start: task, recorder: newRecorder, folder: folder)
             newSession.fail(reason: reason)
+            newSession.releaseLock()
             appState.notice = reason
             return
         }
@@ -667,6 +669,11 @@ final class RecordingCoordinator {
             appState.notice = error.localizedDescription
         }
 
+        // Capture is over, so the claim on the folder goes: everything after this
+        // point is the queue's, and the recovery scan leaves a folder past
+        // `recording` alone whether it is locked or not.
+        session.releaseLock()
+
         appState.lastMeetingURL = session.folder
         appState.lastMeetingState = session.meta.state
         Log.app.notice(
@@ -721,6 +728,7 @@ final class RecordingCoordinator {
         }
         let reason = RecorderTimeout.stop.localizedDescription
         session.fail(reason: reason)
+        session.releaseLock()
         appState.lastMeetingURL = session.folder
         appState.lastMeetingState = session.meta.state
         appState.notice = reason
@@ -830,6 +838,7 @@ final class RecordingCoordinator {
             }
         }
         session.fail(reason: reason.localizedReason)
+        session.releaseLock()
 
         appState.lastMeetingURL = session.folder
         appState.lastMeetingState = session.meta.state

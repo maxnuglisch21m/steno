@@ -130,9 +130,22 @@ actor FluidDiarizer {
         guard let holder else { throw Failure.notLoaded }
 
         let started = Date()
-        let result = try await holder.process(url) { done, total in
-            guard let progress, total > 0 else { return }
-            progress(min(Double(done) / Double(total), 1))
+        let result: DiarizationResult
+        do {
+            result = try await holder.process(url) { done, total in
+                guard let progress, total > 0 else { return }
+                progress(min(Double(done) / Double(total), 1))
+            }
+        } catch OfflineDiarizationError.noSpeechDetected {
+            // Not a failure of the meeting. A room where nobody spoke, a call that was
+            // joined and left again, a channel that captured hold music — all of them
+            // are recordings whose correct transcript has no speakers in it, and the
+            // whole meeting must not end as `failed` because of one.
+            //
+            // FluidAudio throws here rather than returning nothing, so this is where
+            // "no speech" becomes what it actually is: an empty result.
+            Log.transcription.notice("diarization found no speech; the transcript has no speakers")
+            return []
         }
 
         var segments: [DiarSegment] = []

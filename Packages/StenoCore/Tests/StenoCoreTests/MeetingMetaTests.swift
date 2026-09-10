@@ -341,6 +341,30 @@ struct MeetingMetaTests {
         #expect(!json.contains("stopReason"))
     }
 
+    @Test("a crash is a stop reason the recovery pass can write afterwards")
+    func crashStopReason() throws {
+        // Nobody is there to write it when it happens, so M6's recovery pass sets it
+        // on a folder that still says `recording` — which means the transition to
+        // `transcribing` has to be legal after `finishCapture`, not before it.
+        var meta = MeetingMeta(
+            mode: .onsite,
+            started: Self.started,
+            trigger: .manual,
+            input: AudioInputInfo(device: "MacBook Pro Mikrofon"),
+            app: "0.1.0",
+            state: .recording
+        )
+        meta.finishCapture(at: Self.ended, reason: .crash)
+        try meta.transition(to: .transcribing)
+
+        let json = String(decoding: try meta.jsonData(), as: UTF8.self)
+        #expect(json.contains("\"stopReason\" : \"crash\""))
+        let decoded = try MeetingMeta.decode(from: try meta.jsonData())
+        #expect(decoded.stopReason == .crash)
+        #expect(decoded.state == .transcribing)
+        #expect(decoded.duration == Self.ended.timeIntervalSince(Self.started))
+    }
+
     @Test("finishing without a reason keeps the one already recorded")
     func finishKeepsExistingReason() {
         var meta = MeetingMeta(

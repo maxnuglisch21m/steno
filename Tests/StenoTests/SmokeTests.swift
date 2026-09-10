@@ -15,7 +15,12 @@ struct SmokeTests {
         #expect(String(describing: Dependencies.updaterControllerType).contains("Updater"))
         #expect(Dependencies.coreScreenshotThresholds.anchorInterval == 120)
         #expect(!Dependencies.fluidAudioVersion.isEmpty)
+        // Read off the embedded framework rather than written down, so this is also
+        // the check that the reading works: an empty bundle would silently fall back
+        // to the pinned literal, and the two agreeing is what says it did not.
         #expect(!Dependencies.sparkleVersion.isEmpty)
+        #expect(Dependencies.sparkleVersion == Dependencies.pinnedSparkleVersion)
+        #expect(Dependencies.summary.contains(Dependencies.sparkleVersion))
         #expect(Dependencies.summary.contains("Steno"))
     }
 

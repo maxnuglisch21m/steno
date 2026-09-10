@@ -19,6 +19,45 @@ enum ASRVersion: String, Codable, Sendable, CaseIterable, Identifiable {
     }
 }
 
+/// Which language the recognizer is told to expect.
+///
+/// Parakeet v3 is multilingual and needs no hint to work, but it decodes with a
+/// script-aware token filter when it has one: given `de`, top-K candidates that are not
+/// Latin script are passed over in favour of ones that are. On a German meeting with
+/// English product names in it — which is every German meeting — that is the difference
+/// between "Sprint Review" and a handful of Cyrillic lookalikes.
+///
+/// `automatic` sends no hint at all and lets the model decide, which is right for a
+/// meeting whose language is not known in advance and wrong as a default: the app is
+/// German, and a hint that is usually right beats no hint.
+///
+/// The setting reaches `AsrManager.transcribe(_:decoderState:language:)`, and is
+/// silently ignored by the v2 checkpoint, which is English-only and has no filter.
+enum TranscriptionLanguage: String, Codable, Sendable, CaseIterable, Identifiable {
+    case german
+    case english
+    case automatic
+
+    var id: String { rawValue }
+
+    /// The BCP-47 primary subtag handed to the recognizer, or `nil` for "decide".
+    var languageCode: String? {
+        switch self {
+        case .german: return "de"
+        case .english: return "en"
+        case .automatic: return nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .german: return String(localized: "Deutsch")
+        case .english: return String(localized: "Englisch")
+        case .automatic: return String(localized: "Automatisch")
+        }
+    }
+}
+
 /// What `audio.wav` is turned into once the transcript is written.
 ///
 /// Recording is always lossless WAV — it streams, it survives a crash, and the two
@@ -75,6 +114,9 @@ struct StenoSettings: Codable, Sendable, Equatable {
     /// JPEG quality of a saved screenshot. 0…1.
     var jpegQuality: Double
     var asrVersion: ASRVersion
+    /// Which language the recognizer is told to expect. Fed to FluidAudio's
+    /// script-aware token filter; `automatic` sends no hint.
+    var transcriptionLanguage: TranscriptionLanguage
     /// Mirrors `SMAppService.mainApp.status`; the service is the authority.
     var launchAtLogin: Bool
     /// Seconds without a watched process reading the microphone before an `online`
@@ -114,6 +156,7 @@ struct StenoSettings: Codable, Sendable, Equatable {
         screenshotMaxEdge: 1920,
         jpegQuality: 0.8,
         asrVersion: .v3,
+        transcriptionLanguage: .german,
         launchAtLogin: false,
         autoStopDelay: 30,
         showSpeakerCountPicker: false,
@@ -176,6 +219,7 @@ struct StenoSettings: Codable, Sendable, Equatable {
         screenshotMaxEdge = value(.screenshotMaxEdge, d.screenshotMaxEdge)
         jpegQuality = value(.jpegQuality, d.jpegQuality)
         asrVersion = value(.asrVersion, d.asrVersion)
+        transcriptionLanguage = value(.transcriptionLanguage, d.transcriptionLanguage)
         launchAtLogin = value(.launchAtLogin, d.launchAtLogin)
         autoStopDelay = value(.autoStopDelay, d.autoStopDelay)
         showSpeakerCountPicker = value(.showSpeakerCountPicker, d.showSpeakerCountPicker)
@@ -199,6 +243,7 @@ struct StenoSettings: Codable, Sendable, Equatable {
         screenshotMaxEdge: Int,
         jpegQuality: Double,
         asrVersion: ASRVersion,
+        transcriptionLanguage: TranscriptionLanguage,
         launchAtLogin: Bool,
         autoStopDelay: TimeInterval,
         showSpeakerCountPicker: Bool,
@@ -220,6 +265,7 @@ struct StenoSettings: Codable, Sendable, Equatable {
         self.screenshotMaxEdge = screenshotMaxEdge
         self.jpegQuality = jpegQuality
         self.asrVersion = asrVersion
+        self.transcriptionLanguage = transcriptionLanguage
         self.launchAtLogin = launchAtLogin
         self.autoStopDelay = autoStopDelay
         self.showSpeakerCountPicker = showSpeakerCountPicker
@@ -263,6 +309,16 @@ final class SettingsStore {
     /// Set when writing to `UserDefaults` or to the login-item service failed, so the
     /// settings window can say so instead of silently pretending it worked.
     var lastError: String?
+
+    #if DEBUG
+    /// A recording root for this process only, from `--root`. Never persisted.
+    ///
+    /// Debug builds only, and deliberately not a setting: a test run has to be able to
+    /// record into a scratch folder without moving the root of the copy the user has
+    /// running at the same time, and writing the setting would do exactly that. Assigned
+    /// once, before anything reads `rootFolderURL`.
+    var rootFolderOverride: URL?
+    #endif
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -315,7 +371,12 @@ final class SettingsStore {
 
     // MARK: - Convenience
 
-    var rootFolderURL: URL { settings.rootFolderURL }
+    var rootFolderURL: URL {
+        #if DEBUG
+        if let rootFolderOverride { return rootFolderOverride }
+        #endif
+        return settings.rootFolderURL
+    }
 
     var screenshotGateConfig: ScreenshotGateConfig { settings.screenshotGateConfig }
 

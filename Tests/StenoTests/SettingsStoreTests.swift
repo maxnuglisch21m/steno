@@ -170,4 +170,54 @@ struct SettingsStoreTests {
         #expect(AudioArchiveFormat.flac.audioFileName == "audio.flac")
         #expect(AudioArchiveFormat.wav.audioFileName == "audio.wav")
     }
+
+    // MARK: - Language (M6)
+
+    @Test("the language setting maps onto the tag the recognizer takes")
+    func languageCodes() {
+        #expect(TranscriptionLanguage.german.languageCode == "de")
+        #expect(TranscriptionLanguage.english.languageCode == "en")
+        // "Automatisch" is the absence of a hint, not a hint that says "automatic".
+        #expect(TranscriptionLanguage.automatic.languageCode == nil)
+    }
+
+    @Test("German is the default, because the app is")
+    func languageDefault() {
+        #expect(StenoSettings.default.transcriptionLanguage == .german)
+    }
+
+    @Test("the language survives a round trip through UserDefaults")
+    func languagePersists() {
+        let defaults = Self.makeDefaults()
+        let store = SettingsStore(defaults: defaults)
+        store.settings.transcriptionLanguage = .english
+        #expect(SettingsStore(defaults: defaults).settings.transcriptionLanguage == .english)
+    }
+
+    @Test("a blob written before the setting existed decodes to the default")
+    func languageFallsBackWhenAbsent() throws {
+        // Every key falls back on its own, so an older build's settings are not lost
+        // for want of one it never knew about.
+        let json = Data("{\"rootFolderPath\":\"/tmp/Meetings\"}".utf8)
+        let decoded = try JSONDecoder().decode(StenoSettings.self, from: json)
+        #expect(decoded.transcriptionLanguage == .german)
+        #expect(decoded.rootFolderPath == "/tmp/Meetings")
+    }
+
+    @Test("every language the setting offers is one FluidAudio knows")
+    func languagesReachTheRecognizer() {
+        for language in TranscriptionLanguage.allCases {
+            let mapped = FluidASR.fluidLanguage(language.languageCode)
+            #expect((mapped != nil) == (language.languageCode != nil), "\(language)")
+        }
+        #expect(FluidASR.fluidLanguage("de")?.rawValue == "de")
+        // A region subtag means the same thing to a script filter as the language does.
+        #expect(FluidASR.fluidLanguage("de-DE")?.rawValue == "de")
+        #expect(FluidASR.fluidLanguage("EN")?.rawValue == "en")
+        // A tag with no filter behind it is dropped rather than guessed at: filtering
+        // for the wrong script would throw away the right words.
+        #expect(FluidASR.fluidLanguage("xx") == nil)
+        #expect(FluidASR.fluidLanguage("") == nil)
+    }
+
 }

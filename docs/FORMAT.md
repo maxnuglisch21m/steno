@@ -54,6 +54,31 @@ Everything else appears as it is produced: `screens.jsonl` and the images grow d
 the recording, the two transcript files are written when transcription finishes, and
 the audio file is renamed by the archive transcode at the very end.
 
+### `.steno-lock`
+
+While a recording is running, its folder also holds a hidden `.steno-lock`:
+
+```json
+{"app": "0.1.0", "pid": 4711, "processStarted": "2026-09-09T12:30:12Z"}
+```
+
+It says which process is writing into the folder. Steno writes it when it creates the
+folder and removes it when capture ends, so a lock that is still there means one of two
+things — and telling them apart is its whole purpose:
+
+| The process in it | What the folder is |
+|---|---|
+| running | a recording in progress. Nothing may touch the folder — not the WAV, not `meta.json`. |
+| gone | a recording that was interrupted. The recovery pass on the next launch finishes it and removes the lock. |
+
+`processStarted` is there because PIDs are reused: after a reboot the number in a stale
+lock can belong to an unrelated process, and without the start time to compare against,
+the folder would look owned for ever and never be recovered. Both have to match.
+
+It is Steno's bookkeeping rather than part of the recording. A reader may ignore it
+entirely, but should not treat a folder that has one as finished, and should never
+delete a lock whose process is alive.
+
 ### `_work/`
 
 A folder may also hold `_work/`, which is scratch space for transcription:
@@ -185,10 +210,18 @@ together, and all of which are recorded here as the entry they belong to.
 | `auto` | Detection saw no watched process reading the microphone for `autoStopDelay` seconds (specification §2, 30 s by default). `online` only — an `onsite` recording never stops itself. |
 | `sleep` | The Mac went to sleep. The recording was closed before the machine suspended. |
 | `deviceLost` | The input device disappeared, or capture was ended by the system. |
+| `crash` | Nothing ended it: Steno stopped without finishing the folder — a crash, a kill, a quit mid-recording — and the recovery pass on the next launch wrote this. |
 
 Absent while `state` is `recording`, and absent for a recording whose ending nothing
 could account for — a failed write, for instance, where `error` says what happened and
 nothing was lost from the device.
+
+**`crash` is the one whose `ended` is inferred rather than observed.** Nobody was there
+to record it, so the recovery pass derives `ended` from the newest modification time
+among `audio.wav`, `screens.jsonl`, and `meta.json`. The recording may have run a
+fraction longer than that, and nothing on disk can say so; `duration` is therefore a
+lower bound rather than a measurement. Every other value here was written by code that
+watched the recording end.
 
 **It says nothing about success.** A recording can end for any of these reasons and
 still be `done`; `deviceLost` and a `failed` state usually travel together, but the two
@@ -307,13 +340,33 @@ No other transition is legal, and `MeetingState.transition(to:)` throws on one t
 not — including a transition to the state already held, because rewriting `meta.json`
 with the same state is a logic error rather than a harmless no-op.
 
-The state is written continuously so that a crash is detectable. On the next launch:
+The state is written continuously so that a crash is detectable. On the next launch
+Steno scans one level of the recording root and acts on what it finds:
 
-- a folder still reading `recording` was interrupted mid-recording. Its WAV header has
-  to be repaired from the file length (`WAVHeader.repair`), `ended` derived from the
-  audio file's modification time, and the folder queued for transcription.
-- a folder reading `transcribing` has to be queued again.
-- a folder reading `done` or `failed` is left alone.
+| `state` | What happens |
+|---|---|
+| `recording` | The app died mid-recording. `audio.wav`'s RIFF and `data` sizes are recomputed from the file's length and rewritten in place (`WAVHeader`); a half-written final line of `screens.jsonl` is cut off; `ended` comes from the newest modification time in the folder, `duration` from that, `screenshots` from the index; `stopReason` becomes `crash`; the folder moves to `transcribing` and is queued. |
+| `recording`, no audio | Nothing was captured — `audio.wav` is missing or holds a header and no samples. The folder becomes `failed` with `error: "Aufnahme abgebrochen, kein Audio"`, and still carries `ended`, `duration`, and `stopReason: crash`. |
+| `transcribing` | Queued again, unless the queue already lists it. After three attempts it becomes `failed` instead, so that a folder which brings the app down cannot put it into a relaunch loop. |
+| `failed` | Left alone. The menu offers "Letztes Meeting erneut verarbeiten", which is also the one path that resets the attempt count. |
+| `done` | Left alone. |
+
+Two rules stop the scan touching a folder somebody else owns, because a Mac can be
+running two copies of Steno at once:
+
+- a `.steno-lock` whose process is still alive means the folder is being recorded into
+  right now, and nothing in it is touched;
+- a folder whose newest file was written less than ten seconds ago is left alone too,
+  whether it has a lock or not.
+
+Only the audio's *header* is ever rewritten — the samples are never touched, never
+copied, and never re-encoded, so recovery costs the same on a three-hour recording as on
+a one-minute one.
+
+While a recording runs, Steno also refreshes those two header fields in the open file
+every ten seconds. That is not what makes an interrupted recording recoverable — the
+scan above is — but it means the file is playable *before* the next launch, and bounds
+what a player sees to the last ten seconds rather than to nothing at all.
 
 ### Example — `online`
 

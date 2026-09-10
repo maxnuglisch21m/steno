@@ -458,6 +458,21 @@ private struct TranscriptionSettingsTab: View {
                 Text(String(localized: "v3 ist mehrsprachig, Deutsch inbegriffen. v2 ist älter und schneller."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                Picker(
+                    String(localized: "Sprache"),
+                    selection: Binding(
+                        get: { environment.settings.settings.transcriptionLanguage },
+                        set: { environment.settings.settings.transcriptionLanguage = $0 }
+                    )
+                ) {
+                    ForEach(TranscriptionLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                Text(String(localized: "Die erwartete Sprache des Meetings. Sie hilft der Erkennung, Wörter im richtigen Schriftsystem zu wählen. „Automatisch“ überlässt die Entscheidung dem Modell."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

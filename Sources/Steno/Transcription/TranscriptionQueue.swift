@@ -87,6 +87,9 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
         case notTranscribable(MeetingState)
         case noAudio
         case tooManyAttempts
+        /// The models are not on this Mac. Not a failure of the meeting: the queue
+        /// waits rather than marking anything `failed`, and no attempt is counted.
+        case modelsUnavailable
 
         var description: String {
             switch self {
@@ -94,6 +97,7 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
             case .notTranscribable(let state): return "the folder is \(state.rawValue), not transcribing"
             case .noAudio: return "the folder holds no audio.wav"
             case .tooManyAttempts: return "transcription failed three times"
+            case .modelsUnavailable: return "the transcription models are not installed"
             }
         }
 
@@ -107,6 +111,8 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
                 return String(localized: "Zu diesem Meeting gibt es keine Audiodatei.")
             case .tooManyAttempts:
                 return String(localized: "Die Verarbeitung ist dreimal fehlgeschlagen und wurde aufgegeben.")
+            case .modelsUnavailable:
+                return String(localized: "Die Modelle fehlen noch. Die Verarbeitung wartet.")
             }
         }
     }
@@ -255,6 +261,21 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
             Log.transcription.notice("transcription cancelled; the folder stays queued")
             current = nil
             return false
+        } catch Failure.modelsUnavailable {
+            // Not this folder's fault, so not this folder's attempt. The queue stands
+            // down with the folder still queued and picks it up when the models arrive.
+            Log.transcription.notice(
+                "the models are not on this Mac yet; the queue stands down and keeps the folder"
+            )
+            var waiting = store.load()
+            waiting.refundHead(entry.path)
+            store.save(waiting)
+            pendingCount = waiting.count
+            current = nil
+            appState.notice = String(localized: "Die Modelle fehlen noch. Die Verarbeitung wartet.")
+            if appState.phase.isProcessing { appState.phase = .idle }
+            waitForModels()
+            return false
         } catch {
             fail(folder: folder, with: error)
         }
@@ -265,6 +286,37 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
         pendingCount = after.count
         current = nil
         return true
+    }
+
+    // MARK: - Waiting for the models
+
+    /// Set while an observation of `ModelManager` is armed, so only one ever is.
+    private var isWaitingForModels = false
+
+    /// Re-arms the queue for the moment the models arrive.
+    ///
+    /// The download runs from the onboarding window or the settings, which are
+    /// somewhere else entirely; `withObservationTracking` fires once, so this re-arms
+    /// itself until the state it is waiting for actually appears.
+    private func waitForModels() {
+        guard !isWaitingForModels else { return }
+        isWaitingForModels = true
+        withObservationTracking {
+            _ = models.state
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isWaitingForModels = false
+                guard !self.store.load().isEmpty else { return }
+                if self.models.isInstalled {
+                    Log.transcription.notice("the models arrived; picking the queue up again")
+                    self.appState.notice = nil
+                    self.run()
+                } else {
+                    self.waitForModels()
+                }
+            }
+        }
     }
 
     // MARK: - One meeting
@@ -279,7 +331,20 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
 
         // The models, loaded once per launch. Downloading is a no-op when they are
         // already on disk, which is what makes this safe to call per meeting.
-        try await models.prepare(warm: false)
+        //
+        // A failure here is not a failure of this meeting — no models on the Mac yet, no
+        // network to fetch them over — so it is thrown as its own case, which the queue
+        // above turns into waiting rather than into `state: failed`. Without that, a
+        // recovery at launch on a Mac whose download has not happened would use up all
+        // three of the folder's attempts before anyone could do anything about it.
+        do {
+            try await models.prepare(warm: false)
+        } catch {
+            Log.transcription.notice(
+                "the models could not be prepared: \(error.localizedDescription, privacy: .public)"
+            )
+            throw Failure.modelsUnavailable
+        }
         let identifiers = models.modelIdentifiers
 
         // 1 — channels.
@@ -293,9 +358,11 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
         // 2 — speech. Two passes for `online`, one for `onsite`; the microphone pass is
         // short next to the room pass, so the room gets three quarters of the step.
         report(.speech, 0)
+        let language = settings.settings.transcriptionLanguage.languageCode
         let roomPass = try await models.asr.transcribe(
             split.room,
             source: .system,
+            language: language,
             progress: { [weak self] fraction in
                 Task { @MainActor [weak self] in
                     self?.report(.speech, split.mic == nil ? fraction : fraction * 0.75)
@@ -310,6 +377,7 @@ final class TranscriptionQueue: TranscriptionEnqueuing {
             micPass = try await models.asr.transcribe(
                 mic,
                 source: .microphone,
+                language: language,
                 progress: { [weak self] fraction in
                     Task { @MainActor [weak self] in
                         self?.report(.speech, 0.75 + fraction * 0.25)

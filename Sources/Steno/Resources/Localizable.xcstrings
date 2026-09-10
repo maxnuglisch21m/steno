@@ -97,6 +97,54 @@
         }
       }
     },
+    "%d unterbrochene Meetings konnten nicht gerettet werden.": {
+      "comment": "Menu status line after the launch recovery scan found interrupted meetings with no usable audio. Plural.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d interrupted meetings could not be salvaged."
+          }
+        }
+      }
+    },
+    "%d unterbrochene Meetings werden nachverarbeitet": {
+      "comment": "Menu status line after the launch recovery scan picked up interrupted meetings. Plural.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d interrupted meetings are being processed"
+          }
+        }
+      }
+    },
+    "1 unterbrochenes Meeting konnte nicht gerettet werden.": {
+      "comment": "Menu status line after the launch recovery scan found one interrupted meeting with no usable audio.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 interrupted meeting could not be salvaged."
+          }
+        }
+      }
+    },
+    "1 unterbrochenes Meeting wird nachverarbeitet": {
+      "comment": "Menu status line after the launch recovery scan picked up one interrupted meeting.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 interrupted meeting is being processed"
+          }
+        }
+      }
+    },
     "AAC (m4a) — klein": {
       "comment": "Audio archive format option.",
       "extractionState": "manual",
@@ -225,6 +273,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recording"
+          }
+        }
+      }
+    },
+    "Aufnahme abgebrochen, kein Audio": {
+      "comment": "meta.json error for a recording that was interrupted before any audio reached the disk.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording interrupted, no audio"
           }
         }
       }
@@ -637,6 +697,18 @@
         }
       }
     },
+    "Deutsch": {
+      "comment": "Transcription language option: German.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "German"
+          }
+        }
+      }
+    },
     "Die Audioaufnahme ließ sich nicht starten: %@": {
       "comment": "The aggregate device's I/O proc could not be created or started.",
       "extractionState": "manual",
@@ -733,6 +805,18 @@
         }
       }
     },
+    "Die Modelle fehlen noch. Die Verarbeitung wartet.": {
+      "comment": "Menu notice when a meeting is queued but the transcription models are not installed yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The models are not installed yet. Processing is waiting."
+          }
+        }
+      }
+    },
     "Die Sprachmodelle sind nicht geladen.": {
       "comment": "Transcription error: speech recognition was used before its models were loaded.",
       "extractionState": "manual",
@@ -777,6 +861,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Processing failed three times and was given up on."
+          }
+        }
+      }
+    },
+    "Die erwartete Sprache des Meetings. Sie hilft der Erkennung, Wörter im richtigen Schriftsystem zu wählen. „Automatisch“ überlässt die Entscheidung dem Modell.": {
+      "comment": "Explanatory footnote under the transcription language picker in the settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The language the meeting is expected to be in. It helps recognition pick words in the right script. “Automatic” leaves the decision to the model."
           }
         }
       }
@@ -837,6 +933,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Settings…"
+          }
+        }
+      }
+    },
+    "Englisch": {
+      "comment": "Transcription language option: English.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "English"
           }
         }
       }
