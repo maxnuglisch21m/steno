@@ -53,7 +53,7 @@ struct ScreenshotCaptureTests {
         let folder = Self.makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let url = folder.appendingPathComponent("143012_d0.jpg")
+        let url = folder.appendingPathComponent("000000_d0.jpg")
         let bytes = try JPEGWriter.write(Self.makeImage(width: 640, height: 400), to: url, quality: 0.8)
         #expect(bytes > 0)
         #expect(FileManager.default.fileExists(atPath: url.path))
@@ -194,10 +194,10 @@ struct ScreenshotCaptureTests {
 
         let writer = ScreensIndexWriter(folder: folder)
         writer.append(
-            ScreensIndexEntry(t: 0, fileName: "143012_d0.jpg", display: 0, active: false, changed: 0)
+            ScreensIndexEntry(t: 0, fileName: "000000_d0.jpg", display: 0, active: false, changed: 0)
         )
         writer.append(
-            ScreensIndexEntry(t: 5.5, fileName: "143017_d0.jpg", display: 0, active: true, changed: 0.44)
+            ScreensIndexEntry(t: 5.5, fileName: "000005_d0_active.jpg", display: 0, active: true, changed: 0.44)
         )
         writer.close()
 
@@ -208,7 +208,7 @@ struct ScreenshotCaptureTests {
         )
         let entries = try ScreensIndexEntry.decode(jsonl: text)
         #expect(entries.count == 2)
-        #expect(entries[0].file == "screens/143012_d0.jpg")
+        #expect(entries[0].file == "screens/000000_d0.jpg")
         #expect(entries[1].t == 5.5)
         #expect(entries[1].active)
     }
@@ -264,6 +264,10 @@ struct ScreenshotCaptureTests {
         #expect(!entries[0].active)
         #expect(entries[0].changed == 0)
         #expect(entries[0].t < 1)
+        // The name is the offset from `meta.started` as a clock, not the wall clock,
+        // and `at` is where the wall clock went.
+        #expect(entries[0].fileName == "000000_d0.jpg")
+        #expect(entries[0].at != nil)
         // The directory is created lazily, on the first save.
         let image = folder.appendingPathComponent(entries[0].file)
         #expect(FileManager.default.fileExists(atPath: image.path))
@@ -271,7 +275,7 @@ struct ScreenshotCaptureTests {
 
     @Test("a second anchor inside the anchor interval is turned down")
     @MainActor
-    func anchorRespectsTheInterval() {
+    func anchorRespectsTheInterval() throws {
         let folder = Self.makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let started = Date()
@@ -287,6 +291,17 @@ struct ScreenshotCaptureTests {
 
         #expect(sink.counters.saved == 2)
         #expect(sink.counters.skipped == 2)
+
+        // Two minutes in, the name says so: `000200`, the same clock the transcript
+        // would print as `[00:02:00]`.
+        let text = try #require(
+            try? String(
+                contentsOf: folder.appendingPathComponent(ScreensIndexWriter.fileName),
+                encoding: .utf8
+            )
+        )
+        let entries = try #require(try? ScreensIndexEntry.decode(jsonl: text))
+        #expect(entries.map(\.fileName) == ["000000_d0.jpg", "000200_d0.jpg"])
     }
 
     @Test("a display the sink knows nothing about is ignored")

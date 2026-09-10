@@ -2,9 +2,10 @@ import Foundation
 
 /// Hands out the screenshot file names, and makes sure no two frames get the same one.
 ///
-/// The name in the specification carries a wall clock with a second's resolution
-/// (`HHmmss_d<index>[_active].jpg`). Two frames of the same display can land in the
-/// same second — the mouse moving onto a display changes the `_active` part of the
+/// A name carries the offset from `meta.started` as a clock with a second's resolution
+/// (`HHMMSS_d<index>[_active].jpg`), which is the same string `transcript.md` puts in
+/// front of the line that was being spoken. Two frames of the same display can land in
+/// the same second — the mouse moving onto a display changes the `_active` part of the
 /// name but the anchor rule can also fire twice around a second boundary — and the
 /// second frame must not silently overwrite the first, because `screens.jsonl` already
 /// names both. So a repeat within the same second gets `_2`, `_3`, and so on.
@@ -16,31 +17,27 @@ public struct ScreensFileNamer: Sendable {
     /// The last second a display was written in, and how many frames it holds.
     private var lastSecond: [Int: (clock: String, count: Int)] = [:]
 
-    private let timeZone: TimeZone
+    public init() {}
 
-    public init(timeZone: TimeZone = .current) {
-        self.timeZone = timeZone
-    }
-
-    /// The next unused name for a frame of `display` captured at `capturedAt`.
+    /// The next unused name for a frame of `display` captured `elapsed` seconds into
+    /// the recording.
     public mutating func nextFileName(
-        capturedAt: Date,
+        elapsed: TimeInterval,
         display: Int,
         active: Bool
     ) -> String {
         // The clock string is the collision key, because it is exactly what the name
         // encodes: two instants 300 ms apart may or may not share a second.
-        let clock = Self.clock(capturedAt, timeZone: timeZone)
+        let clock = ElapsedClock.compact(elapsed)
         var sequence = 1
         if let previous = lastSecond[display], previous.clock == clock {
             sequence = previous.count + 1
         }
         lastSecond[display] = (clock, sequence)
         return ScreensIndexEntry.fileName(
-            capturedAt: capturedAt,
+            t: elapsed,
             display: display,
             active: active,
-            timeZone: timeZone,
             sequence: sequence
         )
     }
@@ -48,12 +45,5 @@ public struct ScreensFileNamer: Sendable {
     /// Forgets a display, so one unplugged and plugged back in starts clean.
     public mutating func forget(display: Int) {
         lastSecond[display] = nil
-    }
-
-    static func clock(_ date: Date, timeZone: TimeZone) -> String {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        let c = calendar.dateComponents([.hour, .minute, .second], from: date)
-        return String(format: "%02d%02d%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
     }
 }

@@ -154,11 +154,12 @@ struct RecoveryScannerTests {
 
     private static let sampleLine = ScreensIndexEntry(
         t: 1.5,
-        file: "screens/143012_d0.jpg",
+        at: Date(timeIntervalSince1970: 1_788_957_013),
+        file: "screens/000001_d0.jpg",
         display: 0,
         active: false,
         changed: 0.4
-    ).jsonLine + "\n"
+    ).jsonLine() + "\n"
 
     // MARK: - recording
 

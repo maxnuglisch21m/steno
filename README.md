@@ -22,8 +22,8 @@ One folder per meeting, under `~/Meetings/` by default:
 ~/Meetings/2026-09-09_1430_Vorort/      # onsite mode: _Vorort
   audio.m4a          # or audio.wav / audio.flac, depending on the archive setting
   screens/
-    143012_d0.jpg
-    143012_d1_active.jpg
+    000000_d0.jpg          # HHMMSS is the offset from the start
+    000012_d1_active.jpg
   screens.jsonl      # one line per screenshot, keyed by seconds since start
   transcript.json    # utterances, raw diarization segments, models, confidence
   transcript.md      # [00:00:12] S1: Also der Centerplan ist durch.
@@ -32,7 +32,9 @@ One folder per meeting, under `~/Meetings/` by default:
 
 `screens.jsonl` is the bridge between the images and the transcript: each entry
 carries `t`, the offset in seconds from the start of the recording, so a
-downstream tool can line a screenshot up with what was being said.
+downstream tool can line a screenshot up with what was being said. The image's
+own name carries that same offset as a clock, so a human reading the folder can
+do it too.
 
 Steno writes nothing outside the recording root, with one documented exception:
 the ASR and diarization models are cached under
@@ -259,8 +261,11 @@ never produces a frame — so an overdue display is captured out of band with
 `SCScreenshotManager`, and the same gate decides whether to keep it.
 
 Images are JPEG, quality 0.8, longer edge at most 1920 px, named
-`HHmmss_d<index>[_active].jpg` in `screens/`. Two frames of one display inside the same
-wall-clock second get `_2`, `_3` appended, because the index already names both.
+`HHMMSS_d<index>[_active].jpg` in `screens/`. **`HHMMSS` is how far into the recording
+the frame was taken, not a wall clock** — the same clock `transcript.md` prints, so
+`000018_d1_active.jpg` sits beside `[00:00:18] S1: …` and needs no arithmetic to place.
+The wall clock moved into the index line, as `at`. Two frames of one display inside the
+same second get `_2`, `_3` appended, because the index already names both.
 `screens.jsonl` gets its line the moment the file is written and is flushed straight
 away, so a recording that was killed still has an index for everything it managed to
 save. The full format is in [docs/FORMAT.md](docs/FORMAT.md).
@@ -288,9 +293,11 @@ Displays plugged in or unplugged mid-meeting are handled: a new one is appended 
 renumbered**, because the file names and `screens.jsonl` already point at them.
 
 `scripts/verify-recording.sh <folder>` checks a finished folder against all of this —
-every index line parses, every file exists, no two images of a display are closer than
+every index line parses, every file exists, every image's name carries its own `t` as a
+clock and its `at` the matching wall clock, no two images of a display are closer than
 the configured interval, `meta.screenshots` matches the line count, and nothing was
-written into the folder that does not belong there.
+written into the folder that does not belong there. A folder recorded before the names
+counted from `meta.started` is reported as old rather than broken.
 
 ## Detection and the suggestion
 
@@ -512,7 +519,8 @@ wherever the output is being read:
   a segment ends by tenths of a second. So a word whose midpoint sits **up to 0.5 s**
   outside every segment is given the nearest segment's speaker instead (ties go to the
   earlier segment); past 0.5 s it is still `UNKNOWN` and still not guessed at. This is
-  a deliberate deviation from the specification, and the only one in the merge.
+  a deliberate deviation from the specification, and the only one in the merge — see
+  [Abweichungen von der Spec](#abweichungen-von-der-spec).
 - **`ME` only exists in `online` mode**, where channel 1 physically is you.
 - **The language hint only picks a script.** **Einstellungen → Transkription → Sprache**
   is handed to FluidAudio (Deutsch by default, Englisch, or Automatisch — no hint at
@@ -806,6 +814,27 @@ These are properties of the approach, not bugs to be papered over:
   German and English are both Latin, so the hint cannot keep Parakeet v3 out of
   English. On a stretch of poor audio it drifts, and the drift shows in the text rather
   than in the confidence.
+
+## Abweichungen von der Spec
+
+`docs/SPEC.md` is the brief and is never edited to match the code. Where the two
+differ, it is deliberate and it is listed here:
+
+- **Screenshot file names count from the start of the recording, not the wall clock.**
+  §4 asks for `HHmmss_d<index>[_active].jpg` with `HHmmss` as the local time of day.
+  The name is now the offset from `meta.started` — `000018_d1_active.jpg` for a frame
+  18 seconds in — which is character for character the stamp `transcript.md` puts in
+  front of the line that was being spoken. Both files exist to be read against each
+  other, and the wall clock made that a subtraction the reader had to do. Nothing is
+  lost: the instant moved into the index line as `at`, in the same ISO-8601 form
+  `meta.json` uses. Folders recorded before the change keep their old names and are
+  still accepted by `scripts/verify-recording.sh`, which tells the two apart by whether
+  the entries carry `at`.
+- **`UNKNOWN` is honest within half a second.** §5 says "kein Treffer → `UNKNOWN`", and
+  taken literally that stranded single words as their own `UNKNOWN` utterance in the
+  middle of a sentence. A word whose midpoint sits up to 0.5 s outside every diarizer
+  segment takes the nearest segment's speaker instead; past that it is still `UNKNOWN`.
+  The detail is under [Limits](#limits-worth-knowing-before-you-read-a-transcript).
 
 ## Milestones
 

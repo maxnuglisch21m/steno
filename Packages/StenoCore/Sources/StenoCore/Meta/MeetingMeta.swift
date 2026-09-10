@@ -136,7 +136,7 @@ public struct SpeakerHint: Codable, Sendable, Hashable {
 
 /// A display that was being captured, in the order the screenshot file names use.
 public struct DisplayInfo: Codable, Sendable, Hashable {
-    /// Index used in screenshot file names — the `1` in `143012_d1_active.jpg`.
+    /// Index used in screenshot file names — the `1` in `000018_d1_active.jpg`.
     public var index: Int
     /// `CGDirectDisplayID` at recording time. Not stable across reboots.
     public var id: UInt32
@@ -301,18 +301,7 @@ public struct MeetingMeta: Codable, Sendable, Hashable {
     /// A decoder for the format `encoder(timeZone:)` writes. The offset carried by the
     /// string wins, so a recording made in a different zone decodes to the right instant.
     public static func decoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let string = try decoder.singleValueContainer().decode(String.self)
-            guard let date = ISO8601Timestamp.date(from: string) else {
-                throw DecodingError.dataCorruptedError(
-                    in: try decoder.singleValueContainer(),
-                    debugDescription: "\"\(string)\" is not an ISO-8601 timestamp"
-                )
-            }
-            return date
-        }
-        return decoder
+        ISO8601Timestamp.decoder()
     }
 
     public func jsonData(timeZone: TimeZone = .current) throws -> Data {
@@ -329,6 +318,23 @@ public enum ISO8601Timestamp {
     /// `2026-09-09T14:30:12+02:00`, or `…Z` when `timeZone` is UTC.
     public static func string(from date: Date, timeZone: TimeZone = .current) -> String {
         Date.ISO8601FormatStyle(timeZoneSeparator: .colon, timeZone: timeZone).format(date)
+    }
+
+    /// A `JSONDecoder` that reads the timestamps `string(from:timeZone:)` writes,
+    /// wherever they appear — `meta.json`'s dates and `screens.jsonl`'s `at`.
+    public static func decoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let string = try decoder.singleValueContainer().decode(String.self)
+            guard let date = ISO8601Timestamp.date(from: string) else {
+                throw DecodingError.dataCorruptedError(
+                    in: try decoder.singleValueContainer(),
+                    debugDescription: "\"\(string)\" is not an ISO-8601 timestamp"
+                )
+            }
+            return date
+        }
+        return decoder
     }
 
     /// Parses an ISO-8601 timestamp, honouring the offset in the string. Fractional

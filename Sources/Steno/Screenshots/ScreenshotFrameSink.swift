@@ -87,7 +87,9 @@ final class ScreenshotFrameSink: @unchecked Sendable {
     }
 
     let folder: URL
-    /// `meta.started`. `t` in the index is measured from here.
+    /// `meta.started`. `t` in the index is measured from here, and so is the clock in
+    /// every file name — which is why the sink has to be told when the recording began
+    /// rather than reading a wall clock of its own.
     let started: Date
     let configuration: ScreenshotCaptureConfiguration
 
@@ -112,12 +114,12 @@ final class ScreenshotFrameSink: @unchecked Sendable {
         self.started = started
         self.configuration = configuration
         self.tracker = tracker
-        self.index = ScreensIndexWriter(folder: folder)
+        self.index = ScreensIndexWriter(folder: folder, timeZone: timeZone)
         self.context = JPEGWriter.makeContext()
         self.shared = Mutex(
             Shared(
                 gate: ScreenshotGate(config: configuration.gate),
-                namer: ScreensFileNamer(timeZone: timeZone)
+                namer: ScreensFileNamer()
             )
         )
     }
@@ -291,8 +293,11 @@ final class ScreenshotFrameSink: @unchecked Sendable {
             )
             guard let reason = decision.reason else { return (nil, false, false) }
 
+            // The name is the offset as a clock, so it is derived from the same `t`
+            // the index line carries — one number, formatted two ways.
+            let t = now.timeIntervalSince(started)
             let fileName = state.namer.nextFileName(
-                capturedAt: now,
+                elapsed: t,
                 display: displayIndex,
                 active: isActive
             )
@@ -301,7 +306,7 @@ final class ScreenshotFrameSink: @unchecked Sendable {
                     fileName: fileName,
                     displayIndex: displayIndex,
                     reason: reason,
-                    t: now.timeIntervalSince(started)
+                    t: t
                 ),
                 false,
                 false
@@ -342,6 +347,7 @@ final class ScreenshotFrameSink: @unchecked Sendable {
             index.append(
                 ScreensIndexEntry(
                     t: reservation.t,
+                    at: now,
                     fileName: reservation.fileName,
                     display: reservation.displayIndex,
                     active: isActive,

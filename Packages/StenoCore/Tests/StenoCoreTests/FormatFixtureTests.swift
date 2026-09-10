@@ -85,6 +85,7 @@ struct FormatFixtureTests {
 
         #expect(entries.count == 3)
         #expect(entries.allSatisfy { $0.file.hasPrefix("screens/") })
+        #expect(entries.allSatisfy { $0.at != nil })
         #expect(entries.map(\.display) == [0, 1, 1])
         #expect(entries.map(\.active) == [false, true, true])
         // Sorted by time, which is what makes `t` usable as the bridge to the transcript.
@@ -96,8 +97,38 @@ struct FormatFixtureTests {
     func screensIndexRoundTrips() throws {
         let original = try data("screens.jsonl")
         let text = String(decoding: original, as: UTF8.self)
-        let lines = try ScreensIndexEntry.decode(jsonl: text).map(\.jsonLine)
+        let lines = try ScreensIndexEntry.decode(jsonl: text).map { $0.jsonLine(timeZone: Self.zone) }
         #expect(Data((lines.joined(separator: "\n") + "\n").utf8) == original)
+    }
+
+    @Test("every file name carries its own t as a clock")
+    func screensFileNamesCountFromTheStart() throws {
+        let entries = try ScreensIndexEntry.decode(
+            jsonl: String(decoding: try data("screens.jsonl"), as: UTF8.self)
+        )
+
+        for entry in entries {
+            // The name's clock is the transcript's stamp for the same instant, with the
+            // colons taken out — that is the whole reason it is not a wall clock.
+            let stamp = TranscriptMarkdownFormatter.clock(entry.t).replacingOccurrences(of: ":", with: "")
+            #expect(entry.fileName.hasPrefix(stamp + "_d\(entry.display)"))
+        }
+    }
+
+    @Test("at is the wall clock of the same instant t names")
+    func screensWallClockAgreesWithT() throws {
+        let meta = try MeetingMeta.decode(from: data("meta.json"))
+        let entries = try ScreensIndexEntry.decode(
+            jsonl: String(decoding: try data("screens.jsonl"), as: UTF8.self)
+        )
+
+        for entry in entries {
+            let at = try #require(entry.at)
+            let drift = at.timeIntervalSince(meta.started.addingTimeInterval(entry.t))
+            // `at` carries whole seconds and `t` two decimals, so the two agree to
+            // within the second `at` was floored to.
+            #expect(drift <= 0 && drift > -1)
+        }
     }
 
     // MARK: - transcript.json

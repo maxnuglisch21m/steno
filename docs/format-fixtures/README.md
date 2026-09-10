@@ -23,9 +23,10 @@ either. That has two consequences:
 
 - The `file` paths in `screens.jsonl` point at images that are not here, and
   `meta.audio` names an `audio.m4a` that is not here.
-- `scripts/verify-recording.sh` will therefore report those as missing. It is a checker
-  for real meeting folders; this is a documentation fixture, and the two are not the
-  same thing.
+- `scripts/verify-recording.sh` reports those as missing unless it is given
+  `--fixture`, which is exactly this case: the binary parts are allowed to be absent
+  and everything else is still checked. `scripts/verify-recording.sh --fixture
+  docs/format-fixtures/2026-09-09_1430_Teams_Weekly-Sync` passes.
 
 To use it as a fixture in another language, read the four files and satisfy the same
 shapes.

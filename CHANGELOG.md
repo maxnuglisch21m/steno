@@ -32,6 +32,25 @@ release notes, and fails if it is missing.
 
 ### Changed
 
+- **Screenshot file names carry the time since the recording started, not the wall
+  clock.** A frame taken 18.42 s in is now `screens/000018_d1_active.jpg` and not
+  `screens/143012_d1_active.jpg`: `HHMMSS` is the entry's `t` floored to the second,
+  which is character for character the stamp `transcript.md` prints in front of the
+  line that was being spoken (`[00:00:18]`). Lining an image up with the talk is what
+  both files are for, and the wall clock made it a subtraction against `meta.started`
+  that the reader had to do first. Hours count upwards rather than wrapping, so a long
+  meeting keeps its order, and the same-second collision suffix (`_2`, `_3`) is
+  unchanged. `ElapsedClock` in `StenoCore` is now the single formatter for both files,
+  so they cannot drift apart. The wall clock is not lost: every `screens.jsonl` line
+  gained an **`at`** key — `{"t":18.42,"at":"2026-09-09T14:30:30+02:00","file":…}` — in
+  the same ISO-8601-with-offset form and the same zone `meta.json` uses, in second
+  place, before `file`. A deliberate deviation from specification §4, listed in
+  `README.md` under "Abweichungen von der Spec" and described in `docs/FORMAT.md`.
+  Folders recorded by an earlier build are read as they are: an index line without `at`
+  decodes, keeps its wall-clock name, and `scripts/verify-recording.sh` reports such a
+  folder as old rather than broken — it tells the two apart by the presence of `at`,
+  never by the digits, which look alike. The script also learned `--fixture` for a
+  documentation folder whose images and audio are deliberately absent.
 - **The suggestion no longer waits for the meeting's name.** It used to appear only
   after the window-title search had finished, which for a Teams call meant up to ten
   seconds of nothing while the meeting started without the user. Now the panel goes up
@@ -227,8 +246,8 @@ release notes, and fails if it is missing.
   — is taken out of band with `SCScreenshotManager` by a timer, and the same gate stops
   the two paths from both saving the same moment.
 - **`screens/` and `screens.jsonl`.** JPEG at quality 0.8 through `CGImageDestination`,
-  named `HHmmss_d<index>[_active].jpg`, with `_2` upwards when two frames of one
-  display land in the same wall-clock second (`ScreensFileNamer`). The index line is
+  named `HHMMSS_d<index>[_active].jpg`, with `_2` upwards when two frames of one
+  display land in the same second (`ScreensFileNamer`). The index line is
   appended and flushed the moment the file is written, so a recording that was killed
   still has an index for everything it saved. `meta.displays` is written when the
   streams start and `meta.screenshots` when they stop.

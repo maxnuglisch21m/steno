@@ -9,6 +9,11 @@
 #           interval (the shorter one for a frame marked `_active`).
 #   §11.11  nothing was written into the folder except the documented set.
 #
+# A screenshot's name carries the offset from `meta.started` as `HHMMSS`, the same clock
+# `transcript.md` prints as `[HH:MM:SS]`, and the entry's `at` carries the wall clock.
+# Both are checked against the entry's `t`. A folder recorded before that change has no
+# `at` and wall-clock names; it is reported as such and its names are left alone.
+#
 # It also checks what §6 says `meta.json` must agree with — `screenshots` equals the
 # number of index lines, `displays` accounts for every frame, `stopReason` is one of the
 # documented values — and what §5 says about the transcript: `transcript.json` parses,
@@ -23,6 +28,7 @@
 # Usage:
 #   scripts/verify-recording.sh ~/Meetings/2026-09-09_1430_Vorort
 #   scripts/verify-recording.sh --interval 5 --active-interval 2 <folder>
+#   scripts/verify-recording.sh --fixture docs/format-fixtures/2026-09-09_1430_...
 #
 # Exits 0 when everything holds, 1 on a violation, 2 on a usage error.
 
@@ -31,6 +37,7 @@ set -euo pipefail
 INTERVAL=5
 ACTIVE_INTERVAL=2
 ANCHOR_INTERVAL=120
+FIXTURE=0
 FOLDER=""
 
 usage() {
@@ -43,6 +50,9 @@ usage: verify-recording.sh [options] <meeting folder>
                           (default 2)
   --anchor-interval <s>   how often an anchor frame is expected per display
                           (default 120, specification §4.6)
+  --fixture               the folder is a documentation fixture with the binary
+                          parts left out: the JPEGs and the audio file are
+                          allowed to be missing, everything else still holds
   -h, --help              this text
 EOF
 }
@@ -60,6 +70,10 @@ while [[ $# -gt 0 ]]; do
 	--anchor-interval)
 		ANCHOR_INTERVAL="${2:-}"
 		shift 2
+		;;
+	--fixture)
+		FIXTURE=1
+		shift
 		;;
 	-h | --help)
 		usage
@@ -98,7 +112,8 @@ fi
 
 # Everything below is stdlib Python: no jq, no pip, nothing to install. The shell is
 # only here for the arguments and the exit code.
-exec python3 - "$FOLDER" "$INTERVAL" "$ACTIVE_INTERVAL" "$ANCHOR_INTERVAL" <<'PYTHON'
+exec python3 - "$FOLDER" "$INTERVAL" "$ACTIVE_INTERVAL" "$ANCHOR_INTERVAL" "$FIXTURE" <<'PYTHON'
+import datetime
 import json
 import os
 import sys
@@ -109,6 +124,8 @@ folder, interval, active_interval, anchor_interval = (
     float(sys.argv[3]),
     float(sys.argv[4]),
 )
+# A documentation fixture has no JPEGs and no audio; everything else about it is real.
+fixture = sys.argv[5] == "1"
 
 # `t` and `changed` carry two decimals in the index (docs/FORMAT.md), so a gap that is
 # exactly the interval can read as 0.01 short. Anything larger than that is a real
@@ -177,6 +194,37 @@ else:
             entry["_line"] = number
             entries.append(entry)
 
+def timestamp(text):
+    """An ISO-8601 instant with an offset, or None."""
+    if not isinstance(text, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def elapsed_clock(seconds):
+    """`HHMMSS` for an offset from the start, floored, hours counting upwards.
+
+    The same clock `transcript.md` prints as `[HH:MM:SS]`; a screenshot's name is
+    exactly this string, which is what lets the two be lined up by eye.
+    """
+    total = int(max(seconds, 0.0))
+    return "%02d%02d%02d" % (total // 3600, (total % 3600) // 60, total % 60)
+
+
+started = timestamp(meta.get("started")) if isinstance(meta, dict) else None
+
+# Before the names counted from `meta.started` they were a wall clock, and the entries
+# carried no `at`. Such a folder is old, not broken: its names are left unchecked.
+old_naming = bool(entries) and all("at" not in entry for entry in entries)
+if old_naming:
+    note(
+        "this folder was recorded before the file names counted from meta.started — "
+        "the names are a wall clock and there is no \"at\""
+    )
+
 # Every file named exists, and its name says what the entry says.
 for entry in entries:
     name = entry.get("file")
@@ -186,9 +234,10 @@ for entry in entries:
         fail("line %d: %r is not under screens/" % (entry["_line"], name))
     path = os.path.join(folder, name)
     if not os.path.isfile(path):
-        fail("line %d: %s is named in the index but not on disk" % (entry["_line"], name))
-        continue
-    if os.path.getsize(path) == 0:
+        if not fixture:
+            fail("line %d: %s is named in the index but not on disk" % (entry["_line"], name))
+            continue
+    elif os.path.getsize(path) == 0:
         fail("line %d: %s is empty" % (entry["_line"], name))
     base = os.path.basename(name)
     marked_active = "_active" in base
@@ -199,6 +248,37 @@ for entry in entries:
         )
     if isinstance(entry.get("display"), int) and "_d%d" % entry["display"] not in base:
         fail("line %d: %s does not name display %d" % (entry["_line"], base, entry["display"]))
+
+    # The name's clock is `t`, floored to the second — the one thing that makes it
+    # readable next to a transcript line.
+    if not old_naming and isinstance(entry.get("t"), (int, float)):
+        expected = elapsed_clock(entry["t"])
+        if base.split("_", 1)[0] != expected:
+            fail(
+                "line %d: %s does not carry t=%.2f as a clock (expected %s)"
+                % (entry["_line"], base, entry["t"], expected)
+            )
+
+    # `at` is the wall clock of the same instant `t` measures from `meta.started`.
+    if "at" in entry:
+        at = timestamp(entry.get("at"))
+        if at is None:
+            fail("line %d: \"at\" is not an ISO-8601 timestamp" % entry["_line"])
+        elif at.utcoffset() is None:
+            fail("line %d: \"at\" carries no time-zone offset" % entry["_line"])
+        elif started is not None and isinstance(entry.get("t"), (int, float)):
+            drift = (at - started).total_seconds() - entry["t"]
+            # Both timestamps are written to whole seconds, and `meta.started` is
+            # rarely on one: each is floored independently, so `at` can sit up to a
+            # second either side of `started` plus `t`. More than that is a real
+            # disagreement about when the frame was taken.
+            if not (-1.01 <= drift <= 1.01):
+                fail(
+                    "line %d: \"at\" is %.2f s from meta.started plus t=%.2f"
+                    % (entry["_line"], drift, entry["t"])
+                )
+    elif not old_naming:
+        fail("screens.jsonl line %d has no 'at'" % entry["_line"])
 
 # Nothing on disk that the index does not know about.
 screens_dir = os.path.join(folder, "screens")
@@ -379,6 +459,9 @@ for entry in entries:
         if os.path.isfile(path):
             total_bytes += os.path.getsize(path)
 
+if fixture:
+    note("--fixture: the images and the audio file were not expected to be here")
+
 print("folder      %s" % folder)
 if meta is not None:
     print(
@@ -478,7 +561,8 @@ if meta is not None:
         if not isinstance(audio, str):
             fail("meta.audio is not a file name")
         elif not os.path.isfile(os.path.join(folder, audio)):
-            fail("meta.audio names %s, which is not in the folder" % audio)
+            if not fixture:
+                fail("meta.audio names %s, which is not in the folder" % audio)
         else:
             print("audio       %s, %.1f MB" % (audio, os.path.getsize(os.path.join(folder, audio)) / 1_048_576.0))
 

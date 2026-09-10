@@ -41,8 +41,8 @@ folders still waiting for transcription are in `UserDefaults` under `de.21m.sten
 <root>/2026-09-09_1430_Vorort/           # onsite mode
   audio.m4a                              # or audio.flac / audio.wav — see meta.audio
   screens/
-    143012_d0.jpg
-    143012_d1_active.jpg
+    000000_d0.jpg
+    000012_d1_active.jpg
   screens.jsonl
   transcript.json
   transcript.md
@@ -488,18 +488,25 @@ threshold. Each display additionally gets an anchor frame at the start and then 
 Steno's own windows — the suggestion panel, settings, onboarding — are excluded from
 every capture, and while the screen is locked no frames are written at all.
 
-File names: `HHmmss_d<index>[_active][_<n>].jpg`, e.g. `143012_d1_active.jpg`.
+File names: `HHMMSS_d<index>[_active][_<n>].jpg`, e.g. `000018_d1_active.jpg`.
 
-- `HHmmss` is the local wall clock at capture, in the time zone the recording was made
-  in. The instant is `meta.started` plus the entry's `t`.
+- `HHMMSS` is **how far into the recording** the frame was taken — the entry's `t`
+  floored to the second — and not a wall clock. It is character for character the
+  stamp `transcript.md` puts in front of the line that was being spoken, minus the
+  colons: `000018_d1_active.jpg` belongs beside `[00:00:18] S1: …`. Lining an image up
+  with the talk is what both files are for, and a name that shows the same clock does
+  it without arithmetic, without the reader having to fetch `meta.started` first, and
+  without a folder's screenshots reordering themselves when the meeting crosses
+  midnight. Hours count upwards rather than wrapping, so a five-hour meeting ends in
+  `05…` and a very long one may exceed six digits.
 - `<index>` matches `meta.displays[].index`. Indices are assigned in the order
   ScreenCaptureKit lists the displays and are **never renumbered**: a display unplugged
   mid-meeting keeps its index and a new one is appended.
 - `_active` marks the display that held the pointer.
 - `_<n>` is a collision suffix, `_2` upwards, and appears only when two frames of the
-  same display fall inside the same wall-clock second. The clock has a second's
-  resolution, so without it the second image would overwrite the first while the index
-  went on naming both. A reader should not read anything into it beyond ordering.
+  same display fall inside the same second. The clock has a second's resolution, so
+  without it the second image would overwrite the first while the index went on naming
+  both. A reader should not read anything into it beyond ordering.
 - JPEG, quality 0.8 by default, longer edge ≤ 1920 px by default. The image is scaled
   and encoded and nothing else — no cropping, no annotation, no OCR.
 
@@ -508,12 +515,13 @@ written — not assembled at the end, so an interrupted recording still has an i
 every file it managed to write.
 
 ```json
-{"t":18.42,"file":"screens/143012_d1_active.jpg","display":1,"active":true,"changed":0.31}
+{"t":18.42,"at":"2026-09-09T14:30:30+02:00","file":"screens/000018_d1_active.jpg","display":1,"active":true,"changed":0.31}
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
 | `t` | number | Seconds since `meta.started`, two decimals. |
+| `at` | string | The wall clock at capture: ISO-8601 with a numeric offset, whole seconds, the same form and the same zone `meta.json` uses. |
 | `file` | string | Path relative to the meeting folder, including the `screens/` prefix. |
 | `display` | integer | Matches `meta.displays[].index`. |
 | `active` | boolean | Whether this display held the pointer. |
@@ -523,6 +531,20 @@ Key order is fixed and the two numbers carry two decimals — half-even rounding
 `%.2f` does it — so the lines are stable and readable rather than a binary round trip
 of a `Double`. Two decimals is also the tolerance a reader should allow when checking
 that two images of one display are no closer than the configured interval.
+
+`at` is where the wall clock went when the file names stopped carrying one: a reader
+that wants to know when a frame was taken in local time — which meeting, which day,
+which side of a daylight-saving change — reads it off the entry instead of
+reconstructing it. Both `at` and `meta.started` are written to whole seconds and are
+floored independently, so `at` can sit up to a second either side of `meta.started`
+plus `t`. `t` remains the precise figure; `at` is the human one.
+
+An index written before this change (up to and including `v0.1.0-rc.1`) has no `at`,
+and its file names are the local wall clock at capture
+(`143012_d1_active.jpg`). A reader that must handle both
+should key on the presence of `at` rather than on the digits, which look alike;
+`scripts/verify-recording.sh` does exactly that and reports such a folder as old
+rather than broken.
 
 `t` is measured from `meta.started`, at the moment the frame was handled rather than at
 the sample buffer's presentation time. The two differ by the capture queue's latency,

@@ -81,9 +81,11 @@ public struct TranscriptMarkdownFormatter: Sendable {
     }
 
     /// `HH:MM:SS`, counting hours upwards rather than wrapping at 24.
+    ///
+    /// `ElapsedClock` does the formatting, because the screenshot file names carry the
+    /// same clock without its colons and the two must agree to the second.
     public static func clock(_ seconds: TimeInterval) -> String {
-        let total = seconds.isFinite ? Int(max(seconds, 0).rounded(.down)) : 0
-        return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+        ElapsedClock.string(seconds)
     }
 
     private static func confidence(_ value: Double) -> String {

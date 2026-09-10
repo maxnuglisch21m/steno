@@ -17,13 +17,17 @@ final class ScreensIndexWriter: @unchecked Sendable {
     static let fileName = "screens.jsonl"
 
     private let url: URL
+    /// The zone `at` is written in — the same one `meta.json`'s timestamps use, so a
+    /// reader does not have to reconcile two offsets within one folder.
+    private let timeZone: TimeZone
     private var handle: FileHandle?
     private(set) var lineCount = 0
     /// Set once, so a broken index does not fill the log with one line per frame.
     private var hasReportedFailure = false
 
-    init(folder: URL) {
+    init(folder: URL, timeZone: TimeZone = .current) {
         self.url = folder.appendingPathComponent(Self.fileName)
+        self.timeZone = timeZone
     }
 
     /// Appends one entry. Failures are logged once and otherwise swallowed: a
@@ -31,7 +35,7 @@ final class ScreensIndexWriter: @unchecked Sendable {
     func append(_ entry: ScreensIndexEntry) {
         do {
             let handle = try openIfNeeded()
-            try handle.write(contentsOf: entry.jsonLineData)
+            try handle.write(contentsOf: entry.jsonLineData(timeZone: timeZone))
             // Cheap for a few hundred bytes, and it is what makes the file worth
             // reading after a crash rather than after a clean stop.
             try handle.synchronize()
