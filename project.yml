@@ -65,7 +65,11 @@ targets:
         # keys all need to be reviewable in one file.
         INFOPLIST_FILE: Sources/Steno/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CODE_SIGN_ENTITLEMENTS: Config/Steno.entitlements
+        # The ad-hoc variant, because CODE_SIGN_IDENTITY above is "-": a hardened,
+        # ad-hoc signed app cannot load its own embedded Sparkle.framework without the
+        # library-validation exception it adds. The release workflow overrides this
+        # with Config/Steno.entitlements whenever a Developer ID is available.
+        CODE_SIGN_ENTITLEMENTS: Config/Steno-adhoc.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES

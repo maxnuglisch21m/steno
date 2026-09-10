@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The entitlements for an ad-hoc signed build — which is every build until a
+	     Developer ID certificate exists. Identical to Steno.entitlements except for
+	     the library-validation exception below, which such a build cannot run without.
+
+	     The hardened runtime turns on library validation, and library validation only
+	     lets a process load code signed by the same team as itself, or by Apple. Two
+	     ad-hoc signatures have no team at all, and are therefore not the same team:
+	     dyld refuses to map Sparkle.framework out of the app's own bundle with
+	     "mapping process and mapped file (non-platform) have different Team IDs", and
+	     the app dies before `main` runs. Ad-hoc plus hardened runtime plus an embedded
+	     framework is exactly this project's shape, so this is not an edge case but the
+	     default build.
+
+	     The exception is deliberately confined to that build. The release workflow and
+	     scripts/release.sh pass Config/Steno.entitlements instead as soon as a
+	     Developer ID is available: signed with one certificate, app and framework are
+	     the same team, library validation passes on its own, and a shipped app should
+	     not carry a weakening entitlement it does not need. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
