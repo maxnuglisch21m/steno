@@ -279,7 +279,9 @@ struct ModelManagerTests {
         }
         // The compile stage is the one that takes minutes on a cold Mac with nothing
         // to show for it, so it says so rather than looking like a hang.
-        #expect(ModelManager.Stage.compiling(nil).localizedDescription.contains("Minuten"))
+        // Locale-independent: the test bundle follows the runner's language.
+        let compiling = ModelManager.Stage.compiling(nil).localizedDescription
+        #expect(compiling.contains("Minuten") || compiling.contains("minutes"))
         #expect(ModelManager.Stage.compiling("Encoder").localizedDescription.contains("Encoder"))
     }
 
