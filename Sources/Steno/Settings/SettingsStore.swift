@@ -88,9 +88,11 @@ enum AudioArchiveFormat: String, Codable, Sendable, CaseIterable, Identifiable {
 ///
 /// It is stored as a single JSON blob under one `UserDefaults` key rather than as
 /// twenty separate keys, so that reading it is one decode and adding a setting is one
-/// property. Decoding is per-key tolerant: a blob written by an older build is missing
-/// the keys added since, and each of those falls back to its default instead of
-/// throwing the whole thing away.
+/// property. Decoding is tolerant in both directions: a blob written by an older build
+/// is missing the keys added since, and each of those falls back to its default; a blob
+/// written by a *newer* build — or by one that still had the removed `rules` and
+/// `useCalendarTitles` in it — carries keys this type has never heard of, and
+/// `KeyedDecodingContainer` ignores them. Neither case throws the whole blob away.
 struct StenoSettings: Codable, Sendable, Equatable {
     // MARK: Specification §7, in that order
 
@@ -128,12 +130,6 @@ struct StenoSettings: Codable, Sendable, Equatable {
     // MARK: Additions from the plan
 
     var audioArchiveFormat: AudioArchiveFormat
-    /// Never / ask / always, matched against the app and the meeting title.
-    var rules: [RecordingRule]
-    /// Whether the title of the currently running calendar event may be read. Off by
-    /// default, and its own permission prompt: it is the only way to get a title out of
-    /// Zoom or Google Meet, and it is nobody's business otherwise.
-    var useCalendarTitles: Bool
     /// Whether a known meeting title is appended to the folder name as a slug.
     var includeTitleInFolderName: Bool
     /// Whether a notification is posted when a transcript is finished or fails.
@@ -161,8 +157,6 @@ struct StenoSettings: Codable, Sendable, Equatable {
         autoStopDelay: 30,
         showSpeakerCountPicker: false,
         audioArchiveFormat: .aac,
-        rules: [],
-        useCalendarTitles: false,
         includeTitleInFolderName: true,
         notificationsEnabled: true,
         anchorInterval: ScreenshotGateConfig.default.anchorInterval,
@@ -224,8 +218,6 @@ struct StenoSettings: Codable, Sendable, Equatable {
         autoStopDelay = value(.autoStopDelay, d.autoStopDelay)
         showSpeakerCountPicker = value(.showSpeakerCountPicker, d.showSpeakerCountPicker)
         audioArchiveFormat = value(.audioArchiveFormat, d.audioArchiveFormat)
-        rules = value(.rules, d.rules)
-        useCalendarTitles = value(.useCalendarTitles, d.useCalendarTitles)
         includeTitleInFolderName = value(.includeTitleInFolderName, d.includeTitleInFolderName)
         notificationsEnabled = value(.notificationsEnabled, d.notificationsEnabled)
         anchorInterval = value(.anchorInterval, d.anchorInterval)
@@ -248,8 +240,6 @@ struct StenoSettings: Codable, Sendable, Equatable {
         autoStopDelay: TimeInterval,
         showSpeakerCountPicker: Bool,
         audioArchiveFormat: AudioArchiveFormat,
-        rules: [RecordingRule],
-        useCalendarTitles: Bool,
         includeTitleInFolderName: Bool,
         notificationsEnabled: Bool,
         anchorInterval: TimeInterval,
@@ -270,8 +260,6 @@ struct StenoSettings: Codable, Sendable, Equatable {
         self.autoStopDelay = autoStopDelay
         self.showSpeakerCountPicker = showSpeakerCountPicker
         self.audioArchiveFormat = audioArchiveFormat
-        self.rules = rules
-        self.useCalendarTitles = useCalendarTitles
         self.includeTitleInFolderName = includeTitleInFolderName
         self.notificationsEnabled = notificationsEnabled
         self.anchorInterval = anchorInterval

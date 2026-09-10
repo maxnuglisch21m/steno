@@ -20,10 +20,12 @@ import Synchronization
 ///    (`AudioHardwareCreateAggregateDevice`). This is the whole point of the design:
 ///    two devices in one aggregate share one clock and one IOProc, so ch0 and ch1 stay
 ///    aligned for the length of a meeting. Two separate captures would drift — the
-///    fallback §3a mentions, and second choice for exactly that reason. The microphone
-///    is the main sub-device, i.e. the clock master, and the tap follows it with drift
-///    compensation, because the microphone is real hardware with a real crystal and
-///    the tap is software that can be resampled.
+///    fallback §3a mentions, and second choice for exactly that reason. Which member
+///    keeps time is `AggregateClock`'s decision: normally the microphone, because it is
+///    real hardware with a real crystal and the tap is software that can be resampled —
+///    but the tap when the microphone runs below 48 kHz, because a Bluetooth headset in
+///    its hands-free profile would otherwise drag the tapped system audio down to
+///    16 kHz along with itself.
 /// 3. **One IOProc**, which does nothing but arithmetic and a `memcpy` into a
 ///    preallocated ring buffer. It runs under a real-time deadline: no allocation, no
 ///    locks, no logging, no actor hops. See `AudioRingBuffer` and `TapCapture`.
@@ -291,13 +293,38 @@ actor ProcessTapRecorder: AudioRecorder {
         }
 
         // 3 — the aggregate device: microphone plus tap, one clock, one callback.
+        //
+        //     Which of the two sets that clock is decided by `AggregateClock`, from the
+        //     microphone's own nominal rate. A 48 kHz microphone leads, as it always
+        //     did. A Bluetooth headset in its 16 kHz hands-free profile does not: it
+        //     would drag the whole aggregate — and with it the tap's 48 kHz system
+        //     audio — down to 16 kHz, which is what happened on the first real Teams
+        //     recording.
+        let micSampleRate = (try? micDeviceID.nominalSampleRate()) ?? 0
+        let master = AggregateClock.master(micSampleRate: micSampleRate)
+        let tapUID = description.uuid.uuidString
+        if master == .tap {
+            Log.audio.notice(
+                """
+                the input device runs at \(Int(micSampleRate), privacy: .public) Hz; \
+                making the tap the aggregate's clock so the recording keeps \
+                \(Int(AggregateClock.targetSampleRate), privacy: .public) Hz
+                """
+            )
+        }
         let aggregateUID = UUID().uuidString
-        let dictionary: [String: Any] = [
+        func dictionary(clock: AggregateClock.Master) -> [String: Any] { [
             kAudioAggregateDeviceNameKey: "Steno Aufnahme",
             kAudioAggregateDeviceUIDKey: aggregateUID,
-            // The microphone is the clock master. Real hardware leads; the tap, which
-            // is software, follows it through the drift compensation below.
-            kAudioAggregateDeviceMainSubDeviceKey: micUID,
+            // The clock master. Whichever member is named here sets the aggregate's
+            // rate; the other one is drift-compensated onto it.
+            //
+            // `"master"` is documented in terms of sub-*devices*, and a tap lives in
+            // its own list — so the HAL may or may not honour a tap's UID here. Which
+            // is why the resulting rate is read back below rather than assumed, and why
+            // a creation failure with the tap as clock falls back to the microphone
+            // instead of failing the recording.
+            kAudioAggregateDeviceMainSubDeviceKey: clock == .tap ? tapUID : micUID,
             // Private: it never appears in Sound settings or in any other app's device
             // list, and disappears with this process.
             kAudioAggregateDeviceIsPrivateKey: true,
@@ -315,27 +342,59 @@ actor ProcessTapRecorder: AudioRecorder {
             // said while the far end was quiet and nothing in the file would line up
             // with the clock, the screenshots, or ch0 any more.
             //
-            // Off, the aggregate runs on the microphone's clock from the moment
-            // `AudioDeviceStart` returns, and the tap contributes digital silence while
-            // the app is quiet — verified: a tap created during silence picks the audio
-            // up at full level when playback starts afterwards.
+            // Off, the aggregate runs from the moment `AudioDeviceStart` returns and the
+            // tap contributes digital silence while the app is quiet — verified: a tap
+            // created during silence picks the audio up at full level when playback
+            // starts afterwards. That holds whichever member keeps time; what
+            // auto-start would change is *whether the aggregate runs at all*, and it
+            // must run for as long as the meeting does.
             //
             // AudioCap does not hit this because its aggregate is built around the
             // default *output* device, which is always live. Steno's is built around
-            // the microphone, because §3a needs both channels in one file on one clock.
+            // the capture side, because §3a needs both channels in one file on one
+            // clock.
             kAudioAggregateDeviceTapAutoStartKey: false,
             kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: micUID]
+                [
+                    kAudioSubDeviceUIDKey: micUID,
+                    // Only when the microphone is not the one keeping time. Drift
+                    // compensation on the clock master itself is meaningless, and
+                    // asking for it invites the HAL to resample a signal that is
+                    // already the reference.
+                    kAudioSubDeviceDriftCompensationKey: clock == .tap
+                ]
             ],
             kAudioAggregateDeviceTapListKey: [
                 [
-                    kAudioSubTapUIDKey: description.uuid.uuidString,
-                    kAudioSubTapDriftCompensationKey: true
+                    kAudioSubTapUIDKey: tapUID,
+                    kAudioSubTapDriftCompensationKey: clock == .microphone
                 ]
             ]
-        ]
+        ] }
+
         var aggregateID = AudioDeviceID.unknown
-        let aggregateStatus = AudioHardwareCreateAggregateDevice(dictionary as CFDictionary, &aggregateID)
+        var clock = master
+        var aggregateStatus = AudioHardwareCreateAggregateDevice(
+            dictionary(clock: clock) as CFDictionary,
+            &aggregateID
+        )
+        if aggregateStatus != noErr, clock == .tap {
+            // The HAL would not have a tap as its time source. Better a 16 kHz
+            // recording than none, and the log says which happened.
+            Log.audio.error(
+                """
+                the aggregate device refused the tap as its clock \
+                (\(aggregateStatus, privacy: .public)); falling back to the microphone, \
+                so the recording will run at \(Int(micSampleRate), privacy: .public) Hz
+                """
+            )
+            clock = .microphone
+            aggregateID = .unknown
+            aggregateStatus = AudioHardwareCreateAggregateDevice(
+                dictionary(clock: clock) as CFDictionary,
+                &aggregateID
+            )
+        }
         guard aggregateStatus == noErr, aggregateID.isValid else {
             // This is where §3a's fallback would go: two writers, `system.wav` from the
             // tap and `mic.wav` from an `AVAudioEngine`, with the `mHostTime` of each
@@ -361,6 +420,20 @@ actor ProcessTapRecorder: AudioRecorder {
         let sampleRate = (try? aggregateID.nominalSampleRate()) ?? WAVWriter.sampleRate
         hardware.sampleRate = sampleRate > 0 ? sampleRate : WAVWriter.sampleRate
 
+        // The one line that says whether the clock choice actually worked. A rate below
+        // 48 kHz here means channel 0 is being downsampled before Steno sees it and
+        // upsampled again on the way to the file — the Bluetooth case this arrangement
+        // exists to prevent — and it is worth an error rather than a shrug.
+        if hardware.sampleRate < AggregateClock.targetSampleRate {
+            Log.audio.error(
+                """
+                the aggregate runs at \(Int(hardware.sampleRate), privacy: .public) Hz with the \
+                \(clock.rawValue, privacy: .public) as its clock: the tapped system audio is \
+                being downsampled before it is recorded
+                """
+            )
+        }
+
         // 5 — who is where in the callback's buffer list.
         let map = try resolveChannelMap(
             aggregateID: aggregateID,
@@ -372,7 +445,9 @@ actor ProcessTapRecorder: AudioRecorder {
         Log.audio.notice(
             """
             aggregate device #\(aggregateID, privacy: .public) at \
-            \(Int(hardware.sampleRate), privacy: .public) Hz, buffers \
+            \(Int(hardware.sampleRate), privacy: .public) Hz \
+            (\(clock.logDescription, privacy: .public), mic \
+            \(Int(micSampleRate), privacy: .public) Hz), buffers \
             \(map.bufferChannelCounts.map(String.init).joined(separator: "+"), privacy: .public) — \
             \(map.logDescription, privacy: .public)
             """

@@ -27,10 +27,8 @@ final class AppEnvironment {
     let hotKeys: HotKeys
     /// Specification §2: who is reading the microphone, and what follows from it.
     let detector: MeetingDetector
-    /// The trigger-to-recording path — rules, the popup, auto-stop, sleep.
+    /// The trigger-to-recording path — the popup, the title search, auto-stop, sleep.
     let detectionController: MeetingDetectionController
-    /// never / ask / always, from the rules and the meeting's title.
-    let ruleEngine: RuleEngine
     /// Sparkle, or a stand-in that reports itself unconfigured when the bundle has no
     /// usable public key.
     let updater: UpdaterController
@@ -88,19 +86,16 @@ final class AppEnvironment {
         // already fired, and the window with the meeting's name in it belongs to that
         // one.
         let titleSource = SystemMeetingTitleSource(
-            settings: settings,
             refreshPIDs: { [weak detector] meeting in
                 detector?.currentProcesses(of: meeting.app) ?? meeting.pids
             }
         )
-        let ruleEngine = RuleEngine(settings: settings, titleSource: titleSource)
-        self.ruleEngine = ruleEngine
         self.detectionController = MeetingDetectionController(
             settings: settings,
             appState: appState,
             coordinator: coordinator,
             detector: detector,
-            ruleEngine: ruleEngine
+            titleSource: titleSource
         )
     }
 

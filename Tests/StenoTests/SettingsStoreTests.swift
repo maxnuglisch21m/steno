@@ -35,8 +35,6 @@ struct SettingsStoreTests {
         #expect(settings.autoStopDelay == 30)
         #expect(settings.showSpeakerCountPicker == false)
         #expect(settings.audioArchiveFormat == .aac)
-        #expect(settings.rules.isEmpty)
-        #expect(settings.useCalendarTitles == false)
         #expect(settings.includeTitleInFolderName == true)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.anchorInterval == 120)
@@ -46,13 +44,6 @@ struct SettingsStoreTests {
     @Test("every setting survives a round trip through UserDefaults")
     func roundTrip() {
         let defaults = Self.makeDefaults()
-        let rule = RecordingRule(
-            appBundleId: "com.microsoft.teams2",
-            pattern: "Daily",
-            isRegex: true,
-            action: .never,
-            enabled: false
-        )
 
         do {
             let store = SettingsStore(defaults: defaults)
@@ -69,8 +60,6 @@ struct SettingsStoreTests {
             store.settings.autoStopDelay = 45
             store.settings.showSpeakerCountPicker = true
             store.settings.audioArchiveFormat = .flac
-            store.settings.rules = [rule]
-            store.settings.useCalendarTitles = true
             store.settings.includeTitleInFolderName = false
             store.settings.notificationsEnabled = false
             store.settings.anchorInterval = 240
@@ -94,8 +83,6 @@ struct SettingsStoreTests {
         #expect(settings.autoStopDelay == 45)
         #expect(settings.showSpeakerCountPicker == true)
         #expect(settings.audioArchiveFormat == .flac)
-        #expect(settings.rules == [rule])
-        #expect(settings.useCalendarTitles == true)
         #expect(settings.includeTitleInFolderName == false)
         #expect(settings.notificationsEnabled == false)
         #expect(settings.anchorInterval == 240)
@@ -119,6 +106,38 @@ struct SettingsStoreTests {
         #expect(store.settings.audioArchiveFormat == .aac)
         #expect(store.settings.anchorInterval == 120)
         #expect(store.settings.watchlist == WatchedApp.defaults)
+    }
+
+    @Test("a blob still carrying the removed rules keys decodes and drops them")
+    func toleratesRemovedKeys() {
+        let defaults = Self.makeDefaults()
+        // Exactly what a 0.1.0 build wrote, rules and calendar setting and all. The
+        // feature is gone; a settings file that still mentions it must not be thrown
+        // away, and everything beside it must survive.
+        let withRules = """
+        {"rootFolderPath":"/tmp/with-rules","jpegQuality":0.5,\
+        "useCalendarTitles":true,\
+        "rules":[{"id":"6C2C1E3E-6A1F-4E63-9B0C-2E1C6E7A5D11","pattern":"Daily",\
+        "isRegex":false,"action":"never","enabled":true,\
+        "appBundleId":"com.microsoft.teams2"}],\
+        "includeTitleInFolderName":false}
+        """
+        defaults.set(Data(withRules.utf8), forKey: SettingsStore.defaultsKey)
+
+        let store = SettingsStore(defaults: defaults)
+        #expect(store.settings.rootFolderPath == "/tmp/with-rules")
+        #expect(store.settings.jpegQuality == 0.5)
+        #expect(store.settings.includeTitleInFolderName == false)
+        #expect(store.settings.watchlist == WatchedApp.defaults)
+
+        // And the keys are gone for good once it is written back.
+        store.settings.jpegQuality = 0.7
+        let written = (try? JSONSerialization.jsonObject(
+            with: defaults.data(forKey: SettingsStore.defaultsKey) ?? Data()
+        )) as? [String: Any]
+        #expect(written?["rules"] == nil)
+        #expect(written?["useCalendarTitles"] == nil)
+        #expect(written?["jpegQuality"] != nil)
     }
 
     @Test("an unreadable blob falls back to the defaults rather than throwing")

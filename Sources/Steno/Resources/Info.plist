@@ -35,8 +35,6 @@
 	<string>Steno nimmt dein Mikrofon auf, um das Meeting zu transkribieren. Die Aufnahme bleibt auf diesem Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Steno nimmt den Ton der Meeting-App auf, damit die anderen Teilnehmer im Transkript stehen. Die Aufnahme bleibt auf diesem Mac.</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Steno liest den Titel des laufenden Termins, um den Meeting-Ordner zu benennen und Regeln anzuwenden. Nur der Titel, nur während einer Aufnahme.</string>
 
 	<!-- Sparkle. The feed is attached to every GitHub release; the 302 redirect from
 	     `releases/latest/download` is followed. -->

@@ -5,12 +5,13 @@ import StenoCore
 
 /// Reads the meeting name off the triggering app's windows.
 ///
-/// The plan's answer to "never record the daily standup": detection is Core-Audio-only
-/// and knows the app but not the meeting, and `CGWindowListCopyWindowInfo` is where the
-/// meeting's name is written down without asking anyone's calendar. It works well for
-/// Teams (`Weekly Sync | Microsoft Teams`) and for a browser tab; Zoom writes nothing
-/// but `Zoom Meeting`, and Google Meet writes the room code — which is what
-/// `MeetingTitleCleaner.isGeneric` is for, and what the calendar reader exists to cover.
+/// Detection is Core-Audio-only and knows the app but not the meeting, and
+/// `CGWindowListCopyWindowInfo` is where the meeting's name is written down without
+/// asking anyone's calendar. It works well for Teams (`Weekly Sync | Microsoft Teams`)
+/// and for a browser tab; Zoom writes nothing but `Zoom Meeting`, and Google Meet
+/// writes the room code — which is what `MeetingTitleCleaner.isGeneric` is for, and
+/// which is simply the case where a meeting has no name: the folder is then named after
+/// the app, and nothing else changes, because nothing waits for this any more.
 ///
 /// Needs Screen Recording. Without it macOS still returns the window list, but with
 /// every `kCGWindowName` removed, so the reader would silently see nothing but empty
@@ -24,6 +25,11 @@ enum WindowTitleReader {
     /// once the call is actually joined, so the first read is routinely useless. Ten
     /// seconds is the plan's figure; the search stops the moment a usable title
     /// appears, which for a joined Teams call is the first attempt.
+    ///
+    /// Nobody waits for it. `MeetingDetectionController` shows the suggestion first and
+    /// runs this beside it — which is what makes ten seconds an acceptable budget
+    /// rather than ten seconds of the user staring at nothing while their meeting
+    /// starts.
     static let searchTimeout: TimeInterval = 10
     /// How long to wait between attempts.
     static let searchInterval: Duration = .seconds(2)

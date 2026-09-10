@@ -61,18 +61,6 @@
         }
       }
     },
-    "%@-Meeting läuft. Aufnehmen?": {
-      "comment": "Suggestion panel headline when the meeting has no known title. %@ is the app name, e.g. Teams.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A %@ meeting is running. Record it?"
-          }
-        }
-      }
-    },
     "%d px": {
       "comment": "Pixel value next to the maximum image edge stepper.",
       "extractionState": "manual",
@@ -1129,18 +1117,6 @@
         }
       }
     },
-    "Jede App": {
-      "comment": "Rule option: the rule is not limited to one app.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Any app"
-          }
-        }
-      }
-    },
     "Jedes Meeting wird als eigener Ordner hier abgelegt. Steno schreibt nirgendwo sonst hin.": {
       "comment": "Explains the recording folder setting.",
       "extractionState": "manual",
@@ -1173,18 +1149,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Channels"
-          }
-        }
-      }
-    },
-    "Keine Regeln. Ohne Regel fragt Steno bei jedem erkannten Meeting.": {
-      "comment": "Empty state of the rules list.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No rules. Without one, Steno asks about every meeting it detects."
           }
         }
       }
@@ -1453,18 +1417,6 @@
         }
       }
     },
-    "Muster als regulären Ausdruck auswerten": {
-      "comment": "Help text of the regex toggle in a rule.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Treat the pattern as a regular expression"
-          }
-        }
-      }
-    },
     "Nach Updates suchen …": {
       "comment": "Menu item.",
       "extractionState": "manual",
@@ -1549,18 +1501,6 @@
         }
       }
     },
-    "Nur der Titel, nur während einer Aufnahme, nur um den Ordner zu benennen und Regeln zu prüfen. Zoom und Google Meet tragen im Fenstertitel keinen Meetingnamen — das ist der einzige Weg dorthin. Standardmäßig aus.": {
-      "comment": "Privacy sentence for the calendar-titles setting.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Only the title, only during a recording, only to name the folder and match rules. Zoom and Google Meet carry no meeting name in their window titles — this is the only way to one. Off by default."
-          }
-        }
-      }
-    },
     "Nur noch %@ frei. Eine Stunde Aufnahme braucht rund 1 GB.": {
       "comment": "Low disk space warning; %@ is a formatted byte count.",
       "extractionState": "manual",
@@ -1581,18 +1521,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "When one of these apps reads the microphone, Steno offers to record. Detection is Core Audio only — no calendar, no window scraping."
-          }
-        }
-      }
-    },
-    "Ohne Kalenderzugriff bleibt der Termintitel ungenutzt. In den Systemeinstellungen unter „Datenschutz & Sicherheit → Kalender“ wieder erlauben.": {
-      "comment": "Shown when calendar access was refused.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Without calendar access the event title stays unused. Allow it again in System Settings under Privacy & Security → Calendars."
           }
         }
       }
@@ -1669,78 +1597,6 @@
         }
       }
     },
-    "Regel aktiv": {
-      "comment": "Help text of the enable toggle in a rule.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rule active"
-          }
-        }
-      }
-    },
-    "Regel entfernen": {
-      "comment": "Help text of the remove button in a rule.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remove rule"
-          }
-        }
-      }
-    },
-    "Regel hinzufügen": {
-      "comment": "Button that appends a new rule.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Add rule"
-          }
-        }
-      }
-    },
-    "Regeln": {
-      "comment": "Settings tab, and the name of the rules pane inside it.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rules"
-          }
-        }
-      }
-    },
-    "Regeln werden geprüft, sobald ein Meeting erkannt wird. Die erste passende gewinnt; passt keine, fragt Steno nach.": {
-      "comment": "Explains the rules table.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rules are evaluated as soon as a meeting is detected. The first match wins; if none matches, Steno asks."
-          }
-        }
-      }
-    },
-    "Regex": {
-      "comment": "Toggle in a rule row.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Regex"
-          }
-        }
-      }
-    },
     "Screenshots": {
       "comment": "Settings tab.",
       "extractionState": "manual",
@@ -1773,18 +1629,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "How often each display is saved regardless of what changed. Without it a static monitor would go a whole hour without a single frame."
-          }
-        }
-      }
-    },
-    "Speichert Screenshots der Bildschirme und liest Fenstertitel für Regeln.": {
-      "comment": "One-sentence explanation of the screen recording permission.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Saves screenshots of the displays and reads window titles for rules."
           }
         }
       }
@@ -2089,30 +1933,6 @@
         }
       }
     },
-    "Titel des laufenden Kalendertermins lesen": {
-      "comment": "Settings toggle.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Read the title of the running calendar event"
-          }
-        }
-      }
-    },
-    "Titel enthält …": {
-      "comment": "Placeholder of the pattern field in a rule.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Title contains…"
-          }
-        }
-      }
-    },
     "Transkript fertig": {
       "comment": "Notification title when a transcript has been written.",
       "extractionState": "manual",
@@ -2281,18 +2101,6 @@
         }
       }
     },
-    "Watchlist": {
-      "comment": "Name of the watchlist pane in the rules tab.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Watchlist"
-          }
-        }
-      }
-    },
     "Weiter": {
       "comment": "Button of the low disk space alert.",
       "extractionState": "manual",
@@ -2401,30 +2209,6 @@
         }
       }
     },
-    "fragen": {
-      "comment": "Rule action.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ask"
-          }
-        }
-      }
-    },
-    "immer": {
-      "comment": "Rule action.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "always"
-          }
-        }
-      }
-    },
     "macOS gibt die Bildschirmaufnahme erst nach einem Neustart von Steno frei.": {
       "comment": "Onboarding detail for the screen recording permission.",
       "extractionState": "manual",
@@ -2433,18 +2217,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS only grants screen recording after Steno is restarted."
-          }
-        }
-      }
-    },
-    "nie": {
-      "comment": "Rule action.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "never"
           }
         }
       }
@@ -2509,14 +2281,62 @@
         }
       }
     },
-    "„%1$@“ läuft in %2$@. Aufnehmen?": {
-      "comment": "Suggestion panel headline with a known title. %1$@ is the meeting title, %2$@ the app name.",
+    "%@-Meeting erkannt. Aufnehmen und transkribieren?": {
+      "comment": "Suggestion panel headline before the meeting has a name. %@ is the app, e.g. Teams.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%1$@” is running in %2$@. Record it?"
+            "value": "A %@ meeting was detected. Record and transcribe it?"
+          }
+        }
+      }
+    },
+    "„%1$@“ in %2$@ erkannt. Aufnehmen und transkribieren?": {
+      "comment": "Suggestion panel headline once the meeting's name is known. %1$@ is the meeting title, %2$@ the app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” in %2$@ was detected. Record and transcribe it?"
+          }
+        }
+      }
+    },
+    "Erkennung": {
+      "comment": "Settings tab: which apps are watched for microphone use.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detection"
+          }
+        }
+      }
+    },
+    "Jedes erkannte Meeting wird einmal vorgeschlagen. Ohne Antwort verschwindet der Vorschlag nach 20 Sekunden und gilt als abgelehnt.": {
+      "comment": "Settings, detection tab: what happens after a meeting is detected.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every detected meeting is offered once. With no answer the suggestion disappears after 20 seconds and counts as declined."
+          }
+        }
+      }
+    },
+    "Speichert Screenshots der Bildschirme und liest den Fenstertitel, um das Meeting zu benennen.": {
+      "comment": "One-sentence explanation of the screen recording permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saves screenshots of your displays and reads the window title to name the meeting."
           }
         }
       }

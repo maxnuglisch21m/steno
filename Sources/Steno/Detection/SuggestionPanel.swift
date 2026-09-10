@@ -1,17 +1,24 @@
 import AppKit
 import Foundation
+import Observation
 import SwiftUI
 
 /// The suggestion from specification §2: a borderless panel in the top-right corner,
 /// above everything, that offers to record the meeting that has just started.
 ///
 /// ```
-/// Teams-Meeting läuft. Aufnehmen?          („Weekly Sync“ läuft in Teams. Aufnehmen?)
+/// Teams-Meeting erkannt. Aufnehmen und transkribieren?
 /// [ Aufnehmen ]  [ Ignorieren ]
 /// Teilnehmer informieren.
 /// ```
 ///
-/// Three properties matter and each one is a deliberate choice:
+/// The headline gains the meeting's name if one turns up while the panel is on screen
+/// — `„Weekly Sync“ in Teams erkannt.` — which is what `updateTitle(_:)` is for. It is
+/// never waited for: the window title of a Teams call can take eight seconds to
+/// appear, and a question asked eight seconds late is a question asked after the
+/// meeting has started.
+///
+/// Three further properties matter and each one is a deliberate choice:
 ///
 /// - **It does not steal focus.** `.nonactivatingPanel` plus `NSApp` never being
 ///   activated means the meeting keeps the keyboard: a panel that pulled focus out of
@@ -30,6 +37,8 @@ final class SuggestionPanel {
     static let defaultTimeout: TimeInterval = 20
     /// Distance from the top and right edges of the usable screen.
     static let margin: CGFloat = 12
+    /// The panel's width, which is fixed, and the height its position is measured
+    /// from. The height the panel ends up with comes from the text — see `show`.
     static let size = NSSize(width: 320, height: 132)
     private static let fadeDuration: TimeInterval = 0.15
 
@@ -42,6 +51,9 @@ final class SuggestionPanel {
     private var panel: NSPanel?
     private var timeoutTask: Task<Void, Never>?
     private var answer: ((Answer) -> Void)?
+    /// The headline's changing half, so a title that arrives while the panel is up
+    /// rewrites the sentence instead of being lost.
+    private var content: SuggestionContent?
 
     /// Whether a suggestion is on screen.
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -70,9 +82,10 @@ final class SuggestionPanel {
         if panel != nil { finish(.ignore) }
         answer = onAnswer
 
-        let content = SuggestionView(
-            appName: appName,
-            title: title,
+        let content = SuggestionContent(appName: appName, title: title)
+        self.content = content
+        let view = SuggestionView(
+            content: content,
             record: { [weak self] in self?.finish(.record) },
             ignore: { [weak self] in self?.finish(.ignore) }
         )
@@ -85,7 +98,7 @@ final class SuggestionPanel {
         )
         panel.onReturn = { [weak self] in self?.finish(.record) }
         panel.onEscape = { [weak self] in self?.finish(.ignore) }
-        panel.contentView = NSHostingView(rootView: content)
+        panel.contentView = NSHostingView(rootView: view)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -98,6 +111,12 @@ final class SuggestionPanel {
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
         panel.animationBehavior = .utilityWindow
+        // `Self.size.height` is the reserve the corner is measured from; the panel's
+        // actual height comes from the text. `NSHostingView` installs its own intrinsic
+        // constraints as the content view, so the window shrinks to fit the headline
+        // and keeps its top edge — measured at 320×115 for both wordings, with and
+        // without a meeting name in the sentence. That is what makes a headline that
+        // gains a title safe: it is laid out again, and the panel follows.
         panel.setFrameOrigin(Self.origin(for: Self.size))
         panel.alphaValue = 0
         self.panel = panel
@@ -129,6 +148,21 @@ final class SuggestionPanel {
         }
     }
 
+    /// Puts the meeting's name into the sentence, if the panel is still up.
+    ///
+    /// The title search runs beside the panel rather than in front of it, so this is
+    /// the ordinary case rather than a special one: the user sees the generic question
+    /// first and the named one a few seconds later, and the buttons never move.
+    func updateTitle(_ title: String) {
+        guard let content, panel != nil, !title.isEmpty else { return }
+        content.title = title
+        Log.detection.notice("suggestion headline updated with the meeting title")
+    }
+
+    /// Whether the headline currently names the meeting. For the tests and the debug
+    /// runs; the title itself never leaves this object.
+    var showsTitle: Bool { content?.title?.isEmpty == false }
+
     /// Takes the panel down without answering. Used when a recording started some
     /// other way and the question no longer means anything.
     func dismiss() {
@@ -149,6 +183,7 @@ final class SuggestionPanel {
         timeoutTask = nil
         let callback = answer
         answer = nil
+        content = nil
 
         if let panel {
             self.panel = nil
@@ -220,12 +255,28 @@ private final class SuggestionNSPanel: NSPanel {
     }
 }
 
+/// The headline's two halves, observable so the panel can gain the meeting's name
+/// without being taken down and put back up.
+@MainActor
+@Observable
+private final class SuggestionContent {
+    let appName: String
+    var title: String?
+
+    init(appName: String, title: String?) {
+        self.appName = appName
+        self.title = title
+    }
+}
+
 /// The panel's content. Specification §2's three lines, and nothing else.
 private struct SuggestionView: View {
-    let appName: String
-    let title: String?
+    @Bindable var content: SuggestionContent
     let record: () -> Void
     let ignore: () -> Void
+
+    private var appName: String { content.appName }
+    private var title: String? { content.title }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -258,17 +309,17 @@ private struct SuggestionView: View {
         .accessibilityLabel(headline)
     }
 
-    /// "Teams-Meeting läuft. Aufnehmen?", or the same sentence with the meeting's own
-    /// name in it once one is known.
+    /// "Teams-Meeting erkannt. Aufnehmen und transkribieren?", or the same question
+    /// with the meeting's own name in it once one is known.
     private var headline: String {
         guard let title, !title.isEmpty else {
             return String(
-                format: String(localized: "%@-Meeting läuft. Aufnehmen?"),
+                format: String(localized: "%@-Meeting erkannt. Aufnehmen und transkribieren?"),
                 appName
             )
         }
         return String(
-            format: String(localized: "„%1$@“ läuft in %2$@. Aufnehmen?"),
+            format: String(localized: "„%1$@“ in %2$@ erkannt. Aufnehmen und transkribieren?"),
             title,
             appName
         )

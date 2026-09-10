@@ -66,6 +66,32 @@ final class RecordingSession {
         }
     }
 
+    /// Writes the meeting's name into `meta.json`, and only there.
+    ///
+    /// The folder was named when the recording started, and the title search that
+    /// feeds this runs beside the suggestion rather than in front of it — so a title
+    /// routinely arrives seconds after the first audio frame. **The folder is not
+    /// renamed**: the WAV is open inside it, the screenshot capturer and the index
+    /// hold URLs into it, and a rename mid-recording would break all three to gain a
+    /// prettier path. `meta.title` is the field a reader downstream looks at anyway.
+    ///
+    /// A title already known wins: the one written when the folder was created came
+    /// from the same search, only earlier.
+    func setTitle(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, meta.title == nil else { return }
+        do {
+            try update { $0.title = trimmed }
+            Log.storage.info(
+                "\(self.folder.lastPathComponent, privacy: .public): meeting title recorded in meta.json"
+            )
+        } catch {
+            Log.storage.error(
+                "could not record the meeting title: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     /// Advances `state` and writes.
     func transition(to next: MeetingState) throws {
         try update { try $0.transition(to: next) }

@@ -24,14 +24,15 @@ import StenoCore
 /// open build/Build/Products/Debug/Steno.app --args --open-settings
 /// open build/Build/Products/Debug/Steno.app --args --open-onboarding
 ///
-/// // M3: detection, popup, rules, auto-stop — without a meeting.
+/// // M3: detection, popup, auto-stop — without a meeting.
 /// open build/Build/Products/Debug/Steno.app --args \
 ///   --simulate-detection com.microsoft.teams2 "Weekly Sync" \
 ///   --auto-answer record --auto-stop 5 --simulate-detection-end 8
 /// open build/Build/Products/Debug/Steno.app --args \
 ///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --auto-answer ignore
+/// // The panel comes up at once and gains the meeting's name four seconds later.
 /// open build/Build/Products/Debug/Steno.app --args \
-///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --rule never Weekly
+///   --simulate-detection com.microsoft.teams2 "Weekly Sync" --title-delay 4
 ///
 /// // M5: the models, and transcription of a folder that already has audio.
 /// open build/Build/Products/Debug/Steno.app --args --download-models
@@ -71,7 +72,7 @@ struct DebugLaunchArguments {
 
     /// `--simulate-detection <bundle id> [title]`: pretends that app started reading
     /// the microphone, with that window title, and lets the whole of specification §2
-    /// run on it — debounce, rules, popup, recording, auto-stop.
+    /// run on it — debounce, popup, title search, recording, auto-stop.
     ///
     /// The bundle identifier does not have to belong to a running app. The tap target
     /// then resolves to nothing and `ProcessTapRecorder` falls back to a system-wide
@@ -88,9 +89,9 @@ struct DebugLaunchArguments {
     var autoStopDelay: TimeInterval?
     /// `--suggestion-timeout <seconds>`: shortens the twenty-second panel timeout.
     var suggestionTimeout: TimeInterval?
-    /// `--rule never|ask|always <pattern>`: injects one rule ahead of the user's own,
-    /// for this run only.
-    var injectedRule: RecordingRule?
+    /// `--title-delay <seconds>`: how long the fake title search takes, so a run can
+    /// check that the panel appears first and gains the name afterwards.
+    var titleDelay: TimeInterval?
 
     // MARK: M5
 
@@ -191,11 +192,9 @@ struct DebugLaunchArguments {
             case "--suggestion-timeout":
                 suggestionTimeout = Double(arguments[safe: index + 1] ?? "")
                 index += 1
-            case "--rule":
-                let action = RecordingRuleAction(rawValue: arguments[safe: index + 1] ?? "") ?? .ask
-                let pattern = arguments[safe: index + 2] ?? ""
-                injectedRule = RecordingRule(pattern: pattern, action: action)
-                index += 2
+            case "--title-delay":
+                titleDelay = Double(arguments[safe: index + 1] ?? "")
+                index += 1
             case "--download-models":
                 downloadModels = true
             case "--transcribe":
@@ -537,6 +536,20 @@ struct DebugLaunchArguments {
         return Array((speech.isEmpty ? all : speech).prefix(lines))
     }
 
+    /// The one number a detection run is really about: how long the user waits between
+    /// the meeting being noticed and being asked about it. The two seconds of debounce
+    /// this simulation uses are part of it.
+    @MainActor
+    private static func reportPanel(shownAfter elapsed: Duration) {
+        let milliseconds = Double(elapsed.components.seconds) * 1000
+            + Double(elapsed.components.attoseconds) / 1e15
+        let place = SuggestionPanel.shared.frameDescription ?? "?"
+        report(
+            "suggestion panel at \(place), shown \(String(format: "%.0f", milliseconds)) ms "
+                + "after the trigger (2000 ms of that is the shortened debounce)"
+        )
+    }
+
     private static func seconds(_ interval: TimeInterval) -> String {
         String(format: "%.1f s", interval)
     }
@@ -550,10 +563,9 @@ struct DebugLaunchArguments {
     /// Runs specification §2 end to end against a process list this function writes.
     ///
     /// Everything downstream of the fake list is the real thing: the real state
-    /// machine with its debounce, the real rules, the real panel, the real recorder,
-    /// the real `meta.json`. Only the answer to "is Teams reading the microphone" is
-    /// invented — which is the one part that cannot be arranged on a Mac with no
-    /// meeting on it.
+    /// machine with its debounce, the real panel, the real recorder, the real
+    /// `meta.json`. Only the answer to "is Teams reading the microphone" is invented —
+    /// which is the one part that cannot be arranged on a Mac with no meeting on it.
     @MainActor
     private func runDetectionSimulation(
         _ simulate: (bundleId: String, title: String?),
@@ -565,11 +577,6 @@ struct DebugLaunchArguments {
         }
         environment.coordinator.logsScreenshotDecisions = logsScreenshotDecisions
         if let autoStopDelay { settings.settings.autoStopDelay = autoStopDelay }
-        if let injectedRule {
-            // Ahead of the user's own rules, because first match wins and this run is
-            // about the injected one.
-            settings.settings.rules.insert(injectedRule, at: 0)
-        }
 
         // The watchlist has to know the app, or nothing about it is a meeting.
         let app: WatchedApp
@@ -591,7 +598,12 @@ struct DebugLaunchArguments {
         environment.detector.setTiming(
             MeetingDetectorTiming(trigger: 2, autoStop: settings.settings.autoStopDelay, rearm: 60)
         )
-        environment.ruleEngine.useTitleSource(FixedMeetingTitleSource(simulate.title))
+        environment.detectionController.useTitleSource(
+            FixedMeetingTitleSource(
+                simulate.title,
+                delay: .milliseconds(Int((titleDelay ?? 0) * 1000))
+            )
+        )
         if let suggestionTimeout {
             environment.detectionController.suggestionTimeout = suggestionTimeout
         }
@@ -605,23 +617,32 @@ struct DebugLaunchArguments {
 
         Task { @MainActor in
             environment.detectionController.start()
+            let triggeredAt = ContinuousClock.now
             source.setInput(true, bundleId: app.bundleId)
 
             // The panel, if one appears, and the answer that would otherwise be a click.
             if let answer {
                 await Self.waitFor(seconds: 30) { SuggestionPanel.shared.isVisible }
                 if SuggestionPanel.shared.isVisible {
-                    Self.report("suggestion panel at \(SuggestionPanel.shared.frameDescription ?? "?")")
+                    Self.reportPanel(shownAfter: triggeredAt.duration(to: .now))
                     try? await Task.sleep(for: .seconds(1))
+                    Self.report(
+                        (SuggestionPanel.shared.showsTitle
+                            ? "the headline names the meeting"
+                            : "the headline has no meeting title yet")
+                            + ", panel now \(SuggestionPanel.shared.frameDescription ?? "?")"
+                    )
                     SuggestionPanel.shared.answerForTesting(answer)
                 } else {
                     Self.report("no suggestion panel appeared")
                 }
             } else {
                 await Self.waitFor(seconds: 10) { SuggestionPanel.shared.isVisible }
-                Self.report(
-                    "suggestion panel: \(SuggestionPanel.shared.frameDescription ?? "none")"
-                )
+                if SuggestionPanel.shared.isVisible {
+                    Self.reportPanel(shownAfter: triggeredAt.duration(to: .now))
+                } else {
+                    Self.report("suggestion panel: none")
+                }
             }
 
             // Opening a tap and an aggregate device takes a moment, and the recording

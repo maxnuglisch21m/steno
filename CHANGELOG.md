@@ -11,6 +11,66 @@ release notes, and fails if it is missing.
 
 ## [Unreleased]
 
+### Removed
+
+- **Per-meeting rules.** `RecordingRule`, `RuleMatcher`, `RuleEngine`, the
+  never/ask/always table in Settings → Regeln, the `rules` setting, and the `--rule`
+  debug flag are gone. Every detected meeting now shows the suggestion, once, and the
+  answer is a click — which is what the rules could express anyway, at the price of a
+  settings screen to maintain and a behaviour to explain. The watchlist moved to a
+  renamed **Erkennung** tab, which is all that tab holds now.
+- **Calendar titles.** `CalendarTitleReader`, the `useCalendarTitles` setting, the
+  `import EventKit`, and `NSCalendarsFullAccessUsageDescription` in `Info.plist`. The
+  calendar existed to name a meeting *before* the popup was shown, for Zoom and Google
+  Meet whose windows carry a product name and a room code. The popup no longer waits
+  for a name, so reading somebody's calendar bought nothing that a window title does
+  not. Steno now requests no calendar access at all, and the meeting title has exactly
+  one source: the triggering app's window.
+- Settings blobs written by an earlier build still decode: the `rules` and
+  `useCalendarTitles` keys are ignored and dropped the next time the blob is written.
+  There is a test for it.
+
+### Changed
+
+- **The suggestion no longer waits for the meeting's name.** It used to appear only
+  after the window-title search had finished, which for a Teams call meant up to ten
+  seconds of nothing while the meeting started without the user. Now the panel goes up
+  in the same turn of the run loop as the trigger, with
+  `Teams-Meeting erkannt. Aufnehmen und transkribieren?`, and the title search runs
+  beside it: a name that arrives while the question is up rewrites the headline
+  (`„Weekly Sync“ in Teams erkannt. …`), one that arrives after the recording started
+  is written into `meta.title` by `RecordingSession.setTitle(_:)`. The folder is never
+  renamed for a late title — the WAV is open inside it and `screens.jsonl` points into
+  it — so a folder without a title slug can still carry a `title`. The twenty-second
+  auto-dismiss, Return/Esc, and asking once per meeting with the sixty-second re-arm are
+  unchanged.
+- **The merger snaps orphan tokens to the nearest speaker.** A token whose midpoint no
+  diarization segment covers is now given the nearest segment's speaker when that
+  segment's edge is within **0.5 s** (`unknownSnapTolerance`, ties to the earlier
+  segment); only past that does it become `UNKNOWN`. The first real recording was full
+  of the failure this fixes: pyannote ends a segment on the last voiced frame while
+  Parakeet's token still carries the trailing consonant, and the word became a one-word
+  `UNKNOWN` utterance in the middle of somebody's sentence. Re-merging that recording
+  with the new rule turns 16 utterances into 13 and removes all three `UNKNOWN` labels,
+  at distances of 0.03 s, 0.18 s and 0.46 s. A documented deviation from specification
+  §5's "kein Treffer → `UNKNOWN`", noted in `README.md` and `docs/FORMAT.md`.
+- **The aggregate device's clock follows the numbers, not the principle.** The
+  microphone was always the clock master, so a Poly BT700 in its 16 kHz hands-free
+  profile dragged the whole aggregate — and with it the tap's 48 kHz system audio —
+  down to 16 kHz, which is exactly what the first real Teams recording did. `online`
+  capture now asks the input device for its nominal rate: at 48 kHz or above the
+  microphone leads as before, and below it the **tap** becomes the aggregate's main
+  sub-device and the microphone gets `kAudioSubDeviceDriftCompensationKey`. The choice
+  is one pure function (`AggregateClock`) with its own tests, the
+  `aggregate device … at N Hz` log line now says which member keeps time and what the
+  microphone runs at, and a resulting rate below 48 kHz is logged as an error rather
+  than a shrug. Should the HAL refuse a tap as its time source, creation is retried with
+  the microphone so a recording still happens.
+- `--rule` is replaced by `--title-delay <seconds>`, which makes the fake title search
+  take that long — the way to see the panel appear first and gain the name afterwards.
+  The detection simulation now reports how long after the trigger the panel appeared and
+  whether the headline names the meeting.
+
 ### Added
 
 - **In-app updates (M7).** Steno checks GitHub for a newer version once a day and on

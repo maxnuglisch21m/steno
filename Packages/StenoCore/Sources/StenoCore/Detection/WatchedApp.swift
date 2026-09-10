@@ -1,6 +1,6 @@
 import Foundation
 
-/// One app Steno watches for microphone use, as edited in Settings → Rules.
+/// One app Steno watches for microphone use, as edited in Settings → Erkennung.
 ///
 /// Detection is Core-Audio-only (specification §2): Steno asks which process is
 /// reading the microphone and compares its bundle identifier against this list. The

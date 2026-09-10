@@ -4,14 +4,15 @@ import Testing
 
 @testable import Steno
 
-/// Detection above the state machine: the Core Audio glue, the rules, and the path
-/// from a trigger to a recording.
+/// Detection above the state machine: the Core Audio glue, the title search, and the
+/// path from a trigger to a recording.
 ///
 /// The timings themselves are `StenoCoreTests.MeetingDetectorLogicTests`, driven by a
 /// clock a test owns. What is checked here is everything the app adds around them —
 /// helper processes grouped onto one watchlist entry, the tap target that comes out,
-/// rules turning titles into never / ask / always, a trigger being ignored while a
-/// recording runs, and auto-stop writing `stopReason: "auto"`.
+/// the suggestion appearing before the meeting has a name and gaining one afterwards,
+/// a trigger being ignored while a recording runs, and auto-stop writing
+/// `stopReason: "auto"`.
 @Suite("Meeting detection", .serialized)
 @MainActor
 struct MeetingDetectionTests {
@@ -24,7 +25,6 @@ struct MeetingDetectionTests {
         let settings: SettingsStore
         let coordinator: RecordingCoordinator
         let detector: MeetingDetector
-        let ruleEngine: RuleEngine
         let controller: MeetingDetectionController
         let source: FakeProcessAudioSource
         let suiteName: String
@@ -43,7 +43,7 @@ struct MeetingDetectionTests {
     /// change is the whole clock: the five and thirty seconds are somebody else's test.
     private static func makeHarness(
         title: String? = "Weekly Sync",
-        rules: [RecordingRule] = []
+        titleDelay: Duration = .zero
     ) -> Harness {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("steno-detection-\(UUID().uuidString)", isDirectory: true)
@@ -53,7 +53,6 @@ struct MeetingDetectionTests {
 
         let settings = SettingsStore(defaults: defaults)
         settings.setRootFolder(root)
-        settings.settings.rules = rules
         settings.settings.autoStopDelay = 0
 
         let appState = AppState()
@@ -68,13 +67,12 @@ struct MeetingDetectionTests {
 
         let source = FakeProcessAudioSource()
         let detector = MeetingDetector(settings: settings, source: source)
-        let ruleEngine = RuleEngine(settings: settings, titleSource: FixedMeetingTitleSource(title))
         let controller = MeetingDetectionController(
             settings: settings,
             appState: appState,
             coordinator: coordinator,
             detector: detector,
-            ruleEngine: ruleEngine
+            titleSource: FixedMeetingTitleSource(title, delay: titleDelay)
         )
         return Harness(
             root: root,
@@ -82,7 +80,6 @@ struct MeetingDetectionTests {
             settings: settings,
             coordinator: coordinator,
             detector: detector,
-            ruleEngine: ruleEngine,
             controller: controller,
             source: source,
             suiteName: suiteName
@@ -151,88 +148,153 @@ struct MeetingDetectionTests {
         harness.detector.stop()
     }
 
-    // MARK: - Rules
+    // MARK: - The suggestion comes first, the title second
 
-    @Test("with no rule at all the answer is ask")
-    func noRuleMeansAsk() {
-        let harness = Self.makeHarness()
-        defer { harness.tearDown() }
-        let decision = harness.ruleEngine.decide(
-            for: DetectedMeeting(app: Self.teams, pids: [1]),
-            titles: MeetingTitles(raw: ["Weekly Sync | Microsoft Teams"], best: "Weekly Sync")
-        )
-        #expect(decision.action == .ask)
-        #expect(decision.isFromRule == false)
-        #expect(decision.title == "Weekly Sync")
-    }
-
-    @Test("a matching rule decides, and the first one wins")
-    func firstMatchingRuleWins() {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "Weekly", action: .never),
-            RecordingRule(pattern: "Sync", action: .always)
-        ])
-        defer { harness.tearDown() }
-        let decision = harness.ruleEngine.decide(
-            for: DetectedMeeting(app: Self.teams, pids: [1]),
-            titles: MeetingTitles(raw: ["Weekly Sync | Microsoft Teams"], best: "Weekly Sync")
-        )
-        #expect(decision.action == .never)
-        #expect(decision.isFromRule)
-    }
-
-    @Test("a rule can match the raw window title, decoration and all")
-    func rulesSeeRawTitles() {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "Microsoft Teams", action: .always)
-        ])
-        defer { harness.tearDown() }
-        let decision = harness.ruleEngine.decide(
-            for: DetectedMeeting(app: Self.teams, pids: [1]),
-            titles: MeetingTitles(raw: ["Weekly Sync | Microsoft Teams"], best: "Weekly Sync")
-        )
-        #expect(decision.action == .always)
-    }
-
-    @Test("a rule limited to another app does not apply")
-    func ruleAppFilter() {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(appBundleId: "us.zoom.xos", pattern: "", action: .never)
-        ])
-        defer { harness.tearDown() }
-        let decision = harness.ruleEngine.decide(
-            for: DetectedMeeting(app: Self.teams, pids: [1]),
-            titles: MeetingTitles(raw: [], best: nil)
-        )
-        #expect(decision.action == .ask)
-    }
-
-    @Test("an app-only rule applies even when no title could be read — the Zoom case")
-    func appOnlyRuleWithoutTitle() {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(appBundleId: "com.microsoft.teams2", pattern: "", action: .always)
-        ])
-        defer { harness.tearDown() }
-        let decision = harness.ruleEngine.decide(
-            for: DetectedMeeting(app: Self.teams, pids: [1]),
-            titles: .none
-        )
-        #expect(decision.action == .always)
-        #expect(decision.title == nil)
-    }
-
-    // MARK: - From the trigger to a recording
-
-    @Test("an always rule records without asking, with the title in meta.json")
-    func alwaysRuleStartsRecording() async throws {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "Weekly", action: .always)
-        ])
+    @Test("the suggestion appears without waiting for the meeting's name")
+    func panelDoesNotWaitForTheTitle() async {
+        // The title search takes a second here; a Teams call takes up to ten. The panel
+        // must be up long before either.
+        let harness = Self.makeHarness(titleDelay: .seconds(1))
         defer { harness.tearDown() }
         Self.start(harness)
 
         harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
         harness.detector.evaluateNow()
+
+        // Synchronously, in the same turn of the run loop as the trigger.
+        #expect(SuggestionPanel.shared.isVisible)
+        #expect(!SuggestionPanel.shared.showsTitle)
+        #expect(harness.controller.pendingTitle == nil)
+
+        // And the name turns up afterwards, in the headline that is already on screen.
+        await Self.settle({ SuggestionPanel.shared.showsTitle }, seconds: 3)
+        #expect(SuggestionPanel.shared.showsTitle)
+        #expect(harness.controller.pendingTitle == "Weekly Sync")
+
+        SuggestionPanel.shared.answerForTesting(.ignore)
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    @Test("a title known before the click names the folder and meta.json")
+    func titleBeforeTheAnswer() async throws {
+        let harness = Self.makeHarness(title: "Weekly Sync")
+        defer { harness.tearDown() }
+        Self.start(harness)
+
+        harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
+        harness.detector.evaluateNow()
+        await Self.settle({ SuggestionPanel.shared.showsTitle }, seconds: 3)
+        SuggestionPanel.shared.answerForTesting(.record)
+        await Self.settle { harness.appState.phase.isRecording }
+
+        let folder = try #require(
+            try FileManager.default
+                .contentsOfDirectory(at: harness.root, includingPropertiesForKeys: nil)
+                .first
+        )
+        #expect(folder.lastPathComponent.hasSuffix("_Teams_Weekly-Sync"))
+        let meta = try MeetingMeta.decode(
+            from: try Data(contentsOf: folder.appendingPathComponent("meta.json"))
+        )
+        #expect(meta.title == "Weekly Sync")
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    @Test("a title found after the recording started still reaches meta.json")
+    func titleAfterTheAnswer() async throws {
+        // The user clicks Aufnehmen at once; the window title turns up seconds later,
+        // which is the ordinary case for a Teams call.
+        let harness = Self.makeHarness(title: "Weekly Sync", titleDelay: .milliseconds(400))
+        defer { harness.tearDown() }
+        Self.start(harness)
+
+        harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
+        harness.detector.evaluateNow()
+        #expect(SuggestionPanel.shared.isVisible)
+        SuggestionPanel.shared.answerForTesting(.record)
+        await Self.settle { harness.appState.phase.isRecording }
+
+        let folder = try #require(
+            try FileManager.default
+                .contentsOfDirectory(at: harness.root, includingPropertiesForKeys: nil)
+                .first
+        )
+        // The folder was named before the title existed and is not renamed for it: the
+        // WAV is open inside it.
+        #expect(folder.lastPathComponent.hasSuffix("_Teams"))
+
+        func metaTitle() -> String? {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent("meta.json")),
+                  let meta = try? MeetingMeta.decode(from: data)
+            else { return nil }
+            return meta.title
+        }
+        #expect(metaTitle() == nil)
+        await Self.settle({ metaTitle() != nil }, seconds: 3)
+        #expect(metaTitle() == "Weekly Sync")
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    @Test("an app that never names its window records under the app's name alone")
+    func noTitleAtAll() async throws {
+        let harness = Self.makeHarness(title: nil)
+        defer { harness.tearDown() }
+        Self.start(harness)
+
+        harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
+        harness.detector.evaluateNow()
+        #expect(SuggestionPanel.shared.isVisible)
+        #expect(!SuggestionPanel.shared.showsTitle)
+        SuggestionPanel.shared.answerForTesting(.record)
+        await Self.settle { harness.appState.phase.isRecording }
+
+        let folder = try #require(
+            try FileManager.default
+                .contentsOfDirectory(at: harness.root, includingPropertiesForKeys: nil)
+                .first
+        )
+        #expect(folder.lastPathComponent.hasSuffix("_Teams"))
+        let meta = try MeetingMeta.decode(
+            from: try Data(contentsOf: folder.appendingPathComponent("meta.json"))
+        )
+        #expect(meta.title == nil)
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    @Test("ignoring records nothing, and the pending title search is dropped")
+    func ignoringRecordsNothing() async {
+        let harness = Self.makeHarness(title: "Weekly Sync", titleDelay: .milliseconds(400))
+        defer { harness.tearDown() }
+        Self.start(harness)
+
+        harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
+        harness.detector.evaluateNow()
+        SuggestionPanel.shared.answerForTesting(.ignore)
+        #expect(harness.controller.pendingMeeting == nil)
+
+        // Long enough that the title would have arrived, and that a recording would
+        // have started if one were going to.
+        try? await Task.sleep(for: .milliseconds(700))
+        #expect(!harness.appState.phase.isRecording)
+        #expect(!SuggestionPanel.shared.isVisible)
+        let contents = try? FileManager.default.contentsOfDirectory(
+            at: harness.root, includingPropertiesForKeys: nil
+        )
+        #expect((contents ?? []).isEmpty)
+    }
+
+    // MARK: - From the trigger to a recording
+
+    @Test("clicking Aufnehmen starts an online recording of the detected app")
+    func answeringRecordStartsRecording() async throws {
+        let harness = Self.makeHarness()
+        defer { harness.tearDown() }
+        Self.start(harness)
+
+        harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
+        harness.detector.evaluateNow()
+        await Self.settle({ SuggestionPanel.shared.showsTitle }, seconds: 3)
+        SuggestionPanel.shared.answerForTesting(.record)
         await Self.settle { harness.appState.phase.isRecording }
 
         #expect(harness.appState.phase.recordingMode == .online)
@@ -254,13 +316,12 @@ struct MeetingDetectionTests {
         #expect(meta.trigger.kind == .auto)
         #expect(meta.trigger.bundleId == "com.microsoft.teams2")
         #expect(meta.trigger.name == "Teams")
+        try? await Task.sleep(for: .milliseconds(250))
     }
 
-    @Test("a never rule records nothing and shows nothing")
-    func neverRuleDoesNothing() async {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "Weekly", action: .never)
-        ])
+    @Test("nothing is recorded until the question is answered")
+    func nothingHappensWithoutAnAnswer() async {
+        let harness = Self.makeHarness()
         defer { harness.tearDown() }
         Self.start(harness)
 
@@ -269,19 +330,19 @@ struct MeetingDetectionTests {
         // Long enough that a recording would have started if one were going to.
         try? await Task.sleep(for: .milliseconds(300))
 
+        #expect(SuggestionPanel.shared.isVisible)
         #expect(!harness.appState.phase.isRecording)
-        #expect(!SuggestionPanel.shared.isVisible)
         let contents = try? FileManager.default.contentsOfDirectory(
             at: harness.root, includingPropertiesForKeys: nil
         )
         #expect((contents ?? []).isEmpty)
+        SuggestionPanel.shared.answerForTesting(.ignore)
+        try? await Task.sleep(for: .milliseconds(250))
     }
 
     @Test("a trigger during a recording is ignored — specification §1")
     func triggerIgnoredWhileRecording() async {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "", action: .always)
-        ])
+        let harness = Self.makeHarness()
         defer { harness.tearDown() }
         Self.start(harness)
 
@@ -293,7 +354,8 @@ struct MeetingDetectionTests {
         harness.detector.evaluateNow()
         try? await Task.sleep(for: .milliseconds(300))
 
-        // Still the onsite recording, and only one folder exists.
+        // No question was even asked, and the onsite recording is untouched.
+        #expect(!SuggestionPanel.shared.isVisible)
         #expect(harness.appState.phase.recordingMode == .onsite)
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: harness.root, includingPropertiesForKeys: nil
@@ -305,14 +367,13 @@ struct MeetingDetectionTests {
 
     @Test("the app going quiet stops the recording and says so in meta.json")
     func autoStopWritesItsReason() async throws {
-        let harness = Self.makeHarness(rules: [
-            RecordingRule(pattern: "Weekly", action: .always)
-        ])
+        let harness = Self.makeHarness()
         defer { harness.tearDown() }
         Self.start(harness)
 
         harness.source.setInput(true, bundleId: "com.microsoft.teams2", pid: 4242)
         harness.detector.evaluateNow()
+        SuggestionPanel.shared.answerForTesting(.record)
         await Self.settle { harness.appState.phase.isRecording }
 
         harness.source.setInput(false, bundleId: "com.microsoft.teams2", pid: 4242)
@@ -391,14 +452,6 @@ struct MeetingDetectionTests {
         #expect(own.allSatisfy { !$0.isEmpty })
     }
 
-    @Test("the calendar is not read unless both gates are open")
-    func calendarStaysShut() {
-        // The setting is off, so nothing is read whatever the authorization says — and
-        // in particular no prompt can appear from here.
-        #expect(!CalendarTitleReader.isAvailable(useCalendarTitles: false))
-        #expect(CalendarTitleReader.currentTitle(useCalendarTitles: false) == nil)
-    }
-
     // MARK: - The suggestion panel
 
     @Test("the suggestion sits in the top-right corner of the menu-bar screen")
@@ -429,6 +482,29 @@ struct MeetingDetectionTests {
         SuggestionPanel.shared.answerForTesting(.ignore)
         #expect(answers == [.record])
         // Let the fade-out finish before the next test opens one.
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    @Test("the headline gains the meeting's name without the panel going away")
+    func panelGainsTheTitle() async {
+        var answers: [SuggestionPanel.Answer] = []
+        SuggestionPanel.shared.show(appName: "Teams", title: nil, timeout: 30) {
+            answers.append($0)
+        }
+        #expect(SuggestionPanel.shared.isVisible)
+        #expect(!SuggestionPanel.shared.showsTitle)
+
+        SuggestionPanel.shared.updateTitle("Weekly Sync")
+        #expect(SuggestionPanel.shared.showsTitle)
+        // Still the same panel, still waiting for the same answer.
+        #expect(SuggestionPanel.shared.isVisible)
+        #expect(answers.isEmpty)
+
+        SuggestionPanel.shared.answerForTesting(.record)
+        #expect(answers == [.record])
+        // And a title arriving after the panel is gone is dropped rather than kept.
+        SuggestionPanel.shared.updateTitle("Zu spät")
+        #expect(!SuggestionPanel.shared.showsTitle)
         try? await Task.sleep(for: .milliseconds(250))
     }
 

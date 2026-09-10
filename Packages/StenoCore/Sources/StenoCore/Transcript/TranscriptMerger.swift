@@ -7,8 +7,10 @@ import Foundation
 /// The rules, in the order they apply:
 ///
 /// 1. Each room token gets the speaker of the diarization segment covering its
-///    **midpoint**; no covering segment means `UNKNOWN`. The midpoint is used because
-///    token edges are exactly where the recognizer and the diarizer disagree.
+///    **midpoint**. The midpoint is used because token edges are exactly where the
+///    recognizer and the diarizer disagree. A midpoint no segment covers falls to the
+///    nearest segment when that segment's edge is within `unknownSnapTolerance`
+///    (0.5 s), and only becomes `UNKNOWN` when it is further away than that.
 /// 2. In `online` mode the microphone tokens become `ME` and win: a room token whose
 ///    midpoint falls inside a `ME` token's span is dropped, because it is the same
 ///    speech arriving twice. Physics beats the model — channel 1 *is* the user.
@@ -22,6 +24,23 @@ public enum TranscriptMerger {
     /// A silence longer than this starts a new utterance, even for the same speaker.
     public static let defaultGapThreshold: TimeInterval = 0.8
 
+    /// How far outside every diarization segment a token's midpoint may sit and still
+    /// be given the nearest segment's speaker.
+    ///
+    /// Specification §5 says "kein Treffer → `UNKNOWN`", and taken literally that is
+    /// what the first real recording produced: single words stranded as their own
+    /// `UNKNOWN` utterance in the middle of somebody's sentence, because pyannote ends
+    /// a segment on the last voiced frame while Parakeet's token still carries the
+    /// trailing consonant, or because a word landed in the tenth-of-a-second between
+    /// two segments of the same speaker. Half a second is short enough that it can
+    /// only reach a segment that is adjacent to the token — a genuine gap in the
+    /// diarization, where nobody was found speaking at all, is far longer — and long
+    /// enough to cover every boundary disagreement seen so far.
+    ///
+    /// `UNKNOWN` is not removed by this, only narrowed: a token in the middle of a
+    /// stretch the diarizer found no speaker in still has no speaker.
+    public static let defaultUnknownSnapTolerance: TimeInterval = 0.5
+
     /// Merges one recognition pass per channel with the diarization of the room channel.
     ///
     /// - Parameters:
@@ -34,13 +53,16 @@ public enum TranscriptMerger {
     ///   - diarization: the diarizer's segments for the room channel, labels as produced.
     ///   - models: model names, copied into the transcript.
     ///   - gapThreshold: silence that breaks an utterance.
+    ///   - unknownSnapTolerance: how far a token's midpoint may sit outside every
+    ///     segment and still be given the nearest one's speaker.
     public static func merge(
         mode: MeetingMode,
         roomTokens: [ASRToken],
         micTokens: [ASRToken]? = nil,
         diarization: [DiarSegment],
         models: ModelIdentifiers,
-        gapThreshold: TimeInterval = defaultGapThreshold
+        gapThreshold: TimeInterval = defaultGapThreshold,
+        unknownSnapTolerance: TimeInterval = defaultUnknownSnapTolerance
     ) -> Transcript {
         // `onsite` has no microphone channel, so any tokens handed in for one are ignored.
         let micTokens = mode.supportsSelfSpeaker ? (micTokens ?? []) : []
@@ -57,7 +79,11 @@ public enum TranscriptMerger {
             let midpoint = token.midpoint
             let coveredByMe = meSpans.contains { midpoint >= $0.start && midpoint < $0.end }
             guard !coveredByMe else { continue }
-            let speaker = segments.first { $0.covers(midpoint) }?.speaker ?? SpeakerLabel.unknown
+            let speaker = speaker(
+                at: midpoint,
+                in: segments,
+                snapTolerance: unknownSnapTolerance
+            )
             labelled.append(
                 LabelledToken(token: token, rawSpeaker: speaker, source: .room, inputIndex: index)
             )
@@ -139,6 +165,42 @@ public enum TranscriptMerger {
                 asrMic: mode.supportsSelfSpeaker ? meanConfidence(of: micTokens) : nil
             )
         )
+    }
+
+    /// The speaker one instant belongs to: whoever covers it, else whoever is closest
+    /// within `snapTolerance`, else `UNKNOWN`.
+    ///
+    /// Ties go to the earlier segment. A word in the pause between two speakers is a
+    /// coin toss either way, and deciding it by the clock rather than by the order the
+    /// segments happen to arrive in is what makes the merge reproducible.
+    ///
+    /// - Parameters:
+    ///   - time: the token's midpoint.
+    ///   - segments: the diarization, sorted by start time.
+    ///   - snapTolerance: the largest gap between the instant and a segment's edge that
+    ///     still counts as that segment's. Zero snaps only what touches an edge, which
+    ///     is what the half-open `covers` leaves behind.
+    public static func speaker(
+        at time: TimeInterval,
+        in segments: [DiarSegment],
+        snapTolerance: TimeInterval = defaultUnknownSnapTolerance
+    ) -> String {
+        if let covering = segments.first(where: { $0.covers(time) }) { return covering.speaker }
+        guard snapTolerance >= 0 else { return SpeakerLabel.unknown }
+
+        var best: (speaker: String, distance: TimeInterval)?
+        for segment in segments {
+            let distance = time < segment.start ? segment.start - time : time - segment.end
+            guard distance <= snapTolerance else { continue }
+            // Strictly closer, so a tie keeps the segment that started earlier — the
+            // segments are sorted, so that is the one already held.
+            guard let current = best else {
+                best = (segment.speaker, distance)
+                continue
+            }
+            if distance < current.distance { best = (segment.speaker, distance) }
+        }
+        return best?.speaker ?? SpeakerLabel.unknown
     }
 
     /// Mean per-token confidence, ignoring tokens the recognizer gave none for.

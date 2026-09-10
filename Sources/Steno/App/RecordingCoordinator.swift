@@ -467,6 +467,19 @@ final class RecordingCoordinator {
         )
     }
 
+    /// Names the running recording, if it has no name yet.
+    ///
+    /// Detection shows its suggestion before the window title exists (§2 as
+    /// implemented), so the name of the meeting regularly turns up while the recording
+    /// is already running. It reaches `meta.title` and nothing else — the folder keeps
+    /// the name it was created with, because renaming a folder with an open WAV and a
+    /// running screenshot index in it would trade three working things for a prettier
+    /// path.
+    func setTitle(_ title: String) {
+        guard let session else { return }
+        session.setTitle(title)
+    }
+
     /// What an `online` recording taps, decided at the moment it starts.
     ///
     /// M2 only has the manual case: if exactly one watchlist app is reading the

@@ -292,7 +292,7 @@ every index line parses, every file exists, no two images of a display are close
 the configured interval, `meta.screenshots` matches the line count, and nothing was
 written into the folder that does not belong there.
 
-## Detection, rules, and the suggestion
+## Detection and the suggestion
 
 An `online` recording usually starts itself. The signal is Core Audio and nothing
 else: since macOS 14.4 the HAL says which process is reading a microphone
@@ -325,30 +325,33 @@ listeners, detection says so in the log and falls back to a two-second poll.
 
 **What happens when the trigger fires**
 
-1. **The meeting is given a name.** The triggering app's window titles are read
-   (`CGWindowListCopyWindowInfo`, layer 0, biggest window first) and stripped of the
-   app's decoration: `Weekly Sync | Microsoft Teams` → `Weekly Sync`. A title that is
-   only the app's name — `Zoom Meeting`, `Meet`, a room code like `abc-defg-hij` —
-   counts as no title, and the search is repeated every 2 s for up to 10 s, because
-   Teams renames its window only once the call is actually joined. If nothing usable
-   turns up and the calendar setting is on, the running calendar event's title is used
-   instead.
-2. **The rules decide.** First enabled match wins, in the order they are arranged in
-   Settings → Regeln, matched against the app and every title found (cleaned *and*
-   raw): `never` records nothing and shows nothing, `always` starts recording at once,
-   `ask` — and no match at all — shows the suggestion.
-3. **The suggestion** is a borderless panel in the top-right corner, above everything,
-   on every Space:
+1. **The question, at once.** A borderless panel appears in the top-right corner, above
+   everything, on every Space:
 
    ```
-   „Weekly Sync“ läuft in Teams. Aufnehmen?
+   Teams-Meeting erkannt. Aufnehmen und transkribieren?
    [ Aufnehmen ]  [ Ignorieren ]
    Teilnehmer informieren.
    ```
 
    It does not activate Steno or take the keyboard away from the meeting, but it does
    accept Return (record) and Escape (ignore). After **20 s** without an answer it
-   fades out, and that counts as ignoring it.
+   fades out, and that counts as ignoring it. There is nothing to configure and no rule
+   to write: **every detected meeting is asked about, once**, and the answer is a click.
+2. **The name, when it turns up.** In parallel — never in front of the panel — the
+   triggering app's window titles are read (`CGWindowListCopyWindowInfo`, layer 0,
+   biggest window first) and stripped of the app's decoration:
+   `Weekly Sync | Microsoft Teams` becomes `Weekly Sync`. A title that is only the
+   app's name — `Zoom Meeting`, `Meet`, a room code like `abc-defg-hij` — counts as no
+   title, and the search is repeated every 2 s for up to 10 s, because Teams renames
+   its window only once the call is actually joined.
+
+   Where the name lands depends on when it arrives: in the panel's headline
+   (`„Weekly Sync“ in Teams erkannt. Aufnehmen und transkribieren?`) while the question
+   is still up, in the folder name and `meta.title` if the recording has not started
+   yet, and in `meta.title` alone once it has — the folder is never renamed under an
+   open WAV. If nothing turns up in ten seconds, the folder is named after the app and
+   `meta.title` is absent.
 
 **While a recording runs, new triggers are ignored** (specification §1) — but
 detection keeps watching, because the same machinery is what ends the recording:
@@ -402,9 +405,11 @@ audio.wav  ──AudioTranscoder──►  audio.m4a                      meta.j
    `onsite` speaker-count picker was used, the answer is fed in as an upper and a
    lower bound on the number of speakers.
 4. **Merge.** Every word gets the speaker of the diarization segment covering its
-   **midpoint**; a gap over 0.8 s starts a new utterance; microphone words override
-   diarization and become `ME`. This step is pure logic in `StenoCore` and has no
-   model in it — the rules and their tests are in `TranscriptMerger`.
+   **midpoint**, or of the nearest segment when that is at most **0.5 s** away;
+   further than that and the word is `UNKNOWN`. A gap over 0.8 s starts a new
+   utterance, and microphone words override diarization and become `ME`. This step is
+   pure logic in `StenoCore` and has no model in it — the rules and their tests are in
+   `TranscriptMerger`.
 5. **Archive.** The WAV has done its job by now, so it is transcoded per the archive
    setting and deleted — but only after the archive has been read back and found to
    hold the same channels and the same length. A transcode that fails is not a failed
@@ -501,13 +506,20 @@ wherever the output is being read:
 - **Speaker labels are suggestions.** Around 18–20 % diarization error rate on room
   audio. That is why the raw diarizer segments are kept in `transcript.json`: a reader
   can judge them instead of trusting a smoothed-over guess.
-- **`UNKNOWN` is honest.** A word no diarization segment covers is not guessed at.
+- **`UNKNOWN` is honest, within half a second.** Specification §5 says "kein Treffer →
+  `UNKNOWN`", and taken literally that produced single words stranded as their own
+  `UNKNOWN` utterance in the middle of a sentence — the two models disagree about where
+  a segment ends by tenths of a second. So a word whose midpoint sits **up to 0.5 s**
+  outside every segment is given the nearest segment's speaker instead (ties go to the
+  earlier segment); past 0.5 s it is still `UNKNOWN` and still not guessed at. This is
+  a deliberate deviation from the specification, and the only one in the merge.
 - **`ME` only exists in `online` mode**, where channel 1 physically is you.
-- **The language hint is a hint.** **Einstellungen → Transkription → Sprache** tells
-  v3 which script to expect (Deutsch by default, Englisch, or Automatisch — no hint at
-  all). It steers the decoder away from wrong-script lookalikes; it does not stop the
-  model recognizing another language, and on a short utterance after silence it can
-  still pick the wrong one.
+- **The language hint only picks a script.** **Einstellungen → Transkription → Sprache**
+  is handed to FluidAudio (Deutsch by default, Englisch, or Automatisch — no hint at
+  all) and it does reach the decoder. But what it drives there is a
+  Latin/Cyrillic/Greek token filter, and German and English are both Latin: the hint
+  keeps wrong-script lookalikes out and can do nothing at all about the model drifting
+  into English. On a stretch of poor audio it drifts.
 
 ## Settings
 
@@ -520,7 +532,7 @@ tab; the rest are the additions the plan accepted.
 | **Aufnahme** | `onsite` input device (every `AVCaptureDevice`, refreshed on hot-plug) · auto-stop delay · ask for the speaker count · audio archive format (AAC / FLAC / WAV) · include the meeting title in the folder name |
 | **Screenshots** | minimum interval and change threshold, each for a normal display and for the display holding the pointer · maximum image edge · JPEG quality · anchor-frame interval |
 | **Transkription** | ASR version (Parakeet v3 / v2) · expected language (Deutsch / Englisch / Automatisch) · model status with download progress · download button · reveal the model folder |
-| **Regeln** | watchlist of bundle IDs, validated on entry · rules table (app · title pattern · regex · never/ask/always · on/off) · read calendar titles, off by default |
+| **Erkennung** | watchlist of bundle IDs, validated on entry, with a reset to the defaults |
 | **Updates** | check for updates automatically · check now · date of the last check · installed version and build · the feed URL |
 
 Everything is stored as one JSON blob under a single `UserDefaults` key, and
@@ -537,9 +549,8 @@ Settings pane:
 |---|---|---|
 | Microphone | records your voice | both modes |
 | System audio recording | taps the meeting app's audio output | `online` |
-| Screen recording | screenshots, and window titles for rules | screenshots, rules |
+| Screen recording | screenshots, and the window title a meeting is named after | screenshots, meeting titles |
 | Models | ASR and diarization, downloaded once | the transcript, not the recording |
-| Calendar (optional, off by default) | reads the title of the currently running event, to name folders and match rules for apps whose windows carry no title (Zoom, Meet) | rules and folder titles only |
 
 The window re-checks every five seconds while it is open, and Steno re-checks
 whenever it is brought forward, because these switches are flipped in another
@@ -602,7 +613,7 @@ open build/Build/Products/Debug/Steno.app --args --simulate-recording 12 online 
 # The same flow with no hardware at all: folder and meta.json, no audio.
 open build/Build/Products/Debug/Steno.app --args --simulate-null-recording 3 online
 
-# Detection end to end, with an invented process list: trigger, rules, popup,
+# Detection end to end, with an invented process list: trigger, popup, title search,
 # recording, auto-stop. Everything downstream of "is Teams reading the microphone"
 # is the real thing. --auto-answer clicks the panel, --auto-stop shortens the
 # 30 s silence, --simulate-detection-end ends the fake meeting after n seconds.
@@ -610,10 +621,10 @@ open build/Build/Products/Debug/Steno.app --args \
   --simulate-detection com.microsoft.teams2 "Weekly Sync" \
   --auto-answer record --auto-stop 5 --simulate-detection-end 8
 
-# The same with a rule, and with no hardware at all.
+# The panel first, the name four seconds later, and no hardware at all.
 open build/Build/Products/Debug/Steno.app --args \
   --simulate-detection com.microsoft.teams2 "Weekly Sync" \
-  --rule never Weekly --null-recorder
+  --title-delay 4 --null-recorder
 
 # Screenshots on their own: no audio, and one log line per gate decision — display,
 # active, changed share, verdict.
@@ -676,7 +687,7 @@ instructions from its command line.
 ```
 project.yml                 XcodeGen project definition
 Makefile                    gen · test · build · run · release · bump · clean
-Packages/StenoCore/         pure logic: merger, gate, naming, meta, WAV header, rules
+Packages/StenoCore/         pure logic: merger, gate, naming, meta, WAV header, watchlist
 Sources/Steno/              the app: App · Audio · Detection · Screenshots ·
                             Transcription · Storage · Settings · System · Update
 Config/Steno.entitlements   audio input; not sandboxed (Steno-adhoc.entitlements
@@ -760,7 +771,7 @@ Two, both via SwiftPM, both pinned exactly:
   updates
 
 Everything else is a system framework: CoreAudio, AVFoundation,
-ScreenCaptureKit, CoreGraphics, AppKit, EventKit, UserNotifications,
+ScreenCaptureKit, CoreGraphics, AppKit, UserNotifications,
 ServiceManagement. No Python, no ffmpeg, no server.
 
 ## Privacy
@@ -790,9 +801,11 @@ These are properties of the approach, not bugs to be papered over:
 - **Per-speaker tracks from Teams do not exist.** A process tap sees only the
   finished mix; individual streams are available exclusively through Teams'
   cloud compliance-recording API.
-- **The recognizer is given no language hint.** Parakeet v3 works out the language
-  itself, and on a short utterance after silence it sometimes picks the wrong one and
-  transcribes German as English.
+- **The language hint only picks a script.** The recognizer is told which language to
+  expect, but FluidAudio turns that into a Latin/Cyrillic/Greek token filter — and
+  German and English are both Latin, so the hint cannot keep Parakeet v3 out of
+  English. On a stretch of poor audio it drifts, and the drift shows in the text rather
+  than in the confidence.
 
 ## Milestones
 
@@ -801,7 +814,7 @@ These are properties of the approach, not bugs to be papered over:
 | M0 | Menu-bar skeleton + permission onboarding | **done** |
 | M1 | `onsite` audio + microphone-mode check | **done** |
 | M2 | `online` audio: process tap + aggregate device, 2-channel WAV | **done** |
-| M3 | Meeting detection, suggestion popup, auto-stop, rules | **done** |
+| M3 | Meeting detection, suggestion popup, auto-stop | **done** |
 | M4 | Screenshots across all displays | **done** |
 | M5 | ASR + diarization + merge | **done** |
 | M6 | Crash and interruption robustness | **done** |

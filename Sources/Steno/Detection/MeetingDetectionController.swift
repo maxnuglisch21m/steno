@@ -6,14 +6,22 @@ import StenoCore
 /// auto-stop.
 ///
 /// The pieces are deliberately kept apart — `MeetingDetector` knows Core Audio and
-/// nothing else, `RuleEngine` knows rules and nothing else, `SuggestionPanel` knows
-/// AppKit and nothing else — and this is the one object that knows all four of them
-/// plus the coordinator. It is where the two rules that cross those boundaries live:
+/// nothing else, `WindowTitleReader` knows window titles and nothing else,
+/// `SuggestionPanel` knows AppKit and nothing else — and this is the one object that
+/// knows all of them plus the coordinator. It is where the rules that cross those
+/// boundaries live:
 ///
 /// 1. **A trigger during a recording is ignored** (specification §1). Not suppressed
 ///    later, not queued: ignored, in silence. Detection itself keeps running, because
 ///    the same machinery is what ends the recording.
-/// 2. **Every ending is reported back to detection**, so that a meeting the user
+/// 2. **The question comes first, the name second.** The suggestion is shown the
+///    moment the debounce is over, with the generic wording; the title search runs
+///    beside it and folds its answer in when it has one — into the panel's text, into
+///    the recording that has meanwhile started, or into neither if the user has
+///    already said no. It used to run *before* the panel, and a Teams call that takes
+///    eight seconds to name its window is eight seconds in which the user sees nothing
+///    and the meeting starts without them.
+/// 3. **Every ending is reported back to detection**, so that a meeting the user
 ///    stopped by hand is not offered again while it is still running.
 @MainActor
 final class MeetingDetectionController {
@@ -21,31 +29,42 @@ final class MeetingDetectionController {
     private let appState: AppState
     private let coordinator: RecordingCoordinator
     private let detector: MeetingDetector
-    let ruleEngine: RuleEngine
+    private var titleSource: any MeetingTitleSource
     private let panel: SuggestionPanel
 
     /// How long the suggestion stays up. Specification §2's twenty seconds; shortened
     /// by `--suggestion-timeout` when a debug run cannot wait.
     var suggestionTimeout: TimeInterval = SuggestionPanel.defaultTimeout
 
-    /// The meeting a decision is currently being made about, so a second trigger for
-    /// the same app does not open a second panel.
-    private var pending: DetectedMeeting?
-    private var decisionTask: Task<Void, Never>?
+    /// The meeting a decision is currently being made about, or the one whose title is
+    /// still being chased after the decision was made.
+    private var pending: Pending?
+    private var titleTask: Task<Void, Never>?
+
+    /// One trigger, from the panel going up until the title search gives up.
+    private struct Pending {
+        var meeting: DetectedMeeting
+        /// The title, once the window search has found one.
+        var title: String?
+        /// Whether the user said yes and a recording of this meeting was started.
+        var didStart = false
+        /// Whether the question has been answered at all, either way.
+        var isAnswered = false
+    }
 
     init(
         settings: SettingsStore,
         appState: AppState,
         coordinator: RecordingCoordinator,
         detector: MeetingDetector,
-        ruleEngine: RuleEngine,
+        titleSource: any MeetingTitleSource,
         panel: SuggestionPanel = .shared
     ) {
         self.settings = settings
         self.appState = appState
         self.coordinator = coordinator
         self.detector = detector
-        self.ruleEngine = ruleEngine
+        self.titleSource = titleSource
         self.panel = panel
     }
 
@@ -65,8 +84,8 @@ final class MeetingDetectionController {
     }
 
     func stop() {
-        decisionTask?.cancel()
-        decisionTask = nil
+        titleTask?.cancel()
+        titleTask = nil
         pending = nil
         panel.dismiss()
         detector.stop()
@@ -89,61 +108,86 @@ final class MeetingDetectionController {
             return
         }
 
-        pending = meeting
-        decisionTask = Task { [weak self] in
+        pending = Pending(meeting: meeting)
+        // The panel first, and in the same turn of the run loop as the trigger: this
+        // is the latency the user actually feels.
+        panel.show(appName: meeting.name, title: nil, timeout: suggestionTimeout) { [weak self] answer in
+            self?.handleAnswer(answer, for: meeting)
+        }
+        startTitleSearch(for: meeting)
+    }
+
+    /// Chases the window title beside the panel and delivers it wherever it still
+    /// matters.
+    private func startTitleSearch(for meeting: DetectedMeeting) {
+        titleTask?.cancel()
+        titleTask = Task { [weak self] in
             guard let self else { return }
-            let decision = await self.ruleEngine.decide(for: meeting)
+            let title = await self.titleSource.title(for: meeting)
             guard !Task.isCancelled else { return }
-            self.apply(decision, to: meeting)
+            self.applyTitle(title, to: meeting)
         }
     }
 
-    /// never / ask / always, after the title search has had its say.
-    private func apply(_ decision: RuleDecision, to meeting: DetectedMeeting) {
-        defer { decisionTask = nil }
-
-        // The title search takes up to ten seconds, and a great deal can happen in
-        // ten seconds — the user may have started a recording by hand in the meantime.
-        guard !appState.phase.isRecording, !appState.phase.isProcessing else {
-            Log.detection.notice("the decision arrived after a recording had started; dropping it")
-            pending = nil
+    /// A title arrived. Where it goes depends on what has happened in the meantime.
+    private func applyTitle(_ title: String?, to meeting: DetectedMeeting) {
+        defer { titleTask = nil }
+        guard var current = pending, current.meeting.bundleId == meeting.bundleId else { return }
+        guard let title, !title.isEmpty else {
+            // Nothing found in ten seconds. The panel keeps the generic wording, and a
+            // recording that started keeps a folder named after the app alone.
+            if current.isAnswered { pending = nil }
             return
         }
 
-        switch decision.action {
-        case .never:
-            // Nothing is shown and nothing is started. The app stays "offered" as far
-            // as the state machine is concerned, so the sixty-second hysteresis
-            // applies here exactly as it does to an ignored popup: a `never` rule that
-            // re-evaluated every five seconds would burn a title search each time.
-            Log.detection.notice(
-                "a rule says never to record \(meeting.name, privacy: .public); no suggestion shown"
-            )
-            pending = nil
+        current.title = title
+        pending = current
+        // The title itself is never logged — `Log`'s rule is that no meeting content
+        // reaches the unified log.
+        Log.detection.notice(
+            """
+            window title for \(meeting.name, privacy: .public) found \
+            \(current.isAnswered ? "after" : "before", privacy: .public) the answer
+            """
+        )
 
-        case .always:
-            Log.detection.notice("a rule says always to record \(meeting.name, privacy: .public)")
-            pending = nil
-            startRecording(meeting, title: decision.title)
+        if !current.isAnswered {
+            // Still on screen: the sentence gains the meeting's name where the user
+            // can see it before deciding.
+            panel.updateTitle(title)
+        } else if current.didStart {
+            // Too late for the folder name, which was fixed when the folder was
+            // created, but not too late for `meta.json` — and `meta.title` is what a
+            // reader downstream actually looks at.
+            coordinator.setTitle(title)
+        }
+        if current.isAnswered { pending = nil }
+    }
 
-        case .ask:
-            panel.show(
-                appName: meeting.name,
-                title: decision.title,
-                timeout: suggestionTimeout
-            ) { [weak self] answer in
-                guard let self else { return }
-                self.pending = nil
-                switch answer {
-                case .record:
-                    self.startRecording(meeting, title: decision.title)
-                case .ignore:
-                    // Ignoring is an answer, and the answer holds until the app has
-                    // been quiet for sixty seconds (specification §2). Nothing to do:
-                    // the state machine already recorded that it asked.
-                    Log.detection.notice("suggestion for \(meeting.name, privacy: .public) ignored")
-                }
-            }
+    // MARK: - The answer
+
+    private func handleAnswer(_ answer: SuggestionPanel.Answer, for meeting: DetectedMeeting) {
+        guard var current = pending, current.meeting.bundleId == meeting.bundleId else { return }
+        current.isAnswered = true
+
+        switch answer {
+        case .record:
+            current.didStart = true
+            pending = current
+            startRecording(meeting, title: current.title)
+            // A title still on its way is worth having: it reaches `meta.json` through
+            // `applyTitle`. If the search is already over, so is this trigger.
+            if titleTask == nil { pending = nil }
+
+        case .ignore:
+            // Ignoring is an answer, and the answer holds until the app has been quiet
+            // for sixty seconds (specification §2). Nothing to do: the state machine
+            // already recorded that it asked, and nobody is waiting for the name of a
+            // meeting that will not be recorded.
+            Log.detection.notice("suggestion for \(meeting.name, privacy: .public) ignored")
+            titleTask?.cancel()
+            titleTask = nil
+            pending = nil
         }
     }
 
@@ -160,7 +204,8 @@ final class MeetingDetectionController {
         Log.detection.notice(
             """
             starting a recording of \(meeting.name, privacy: .public) \
-            (\(fresh.tapTarget.logDescription, privacy: .public))
+            (\(fresh.tapTarget.logDescription, privacy: .public), \
+            title \(title == nil ? "unknown" : "known", privacy: .public))
             """
         )
         coordinator.start(
@@ -233,6 +278,15 @@ final class MeetingDetectionController {
 
     #if DEBUG
     /// The meeting a decision is being made about, for the debug runs.
-    var pendingMeeting: DetectedMeeting? { pending }
+    var pendingMeeting: DetectedMeeting? { pending?.meeting }
+
+    /// The title found for it so far, if any.
+    var pendingTitle: String? { pending?.title }
+
+    /// Hands the controller a title without a window to read it from.
+    /// `--simulate-detection` and the tests, and nothing else.
+    func useTitleSource(_ source: any MeetingTitleSource) {
+        titleSource = source
+    }
     #endif
 }

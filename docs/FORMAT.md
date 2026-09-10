@@ -160,7 +160,7 @@ working when they are absent.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `title` | string | Meeting title from the triggering app's window or a calendar event. |
+| `title` | string | Meeting title, from the triggering app's window title. May be written after the recording started. |
 | `audio` | string | File name of the audio archive: `audio.m4a`, `audio.flac`, or `audio.wav`. Absent when no audio file was written. |
 | `appBuild` | string | Steno's build number. |
 | `os` | string | The macOS version the recording was made on, e.g. `26.6.0`. |
@@ -233,23 +233,27 @@ fields answer different questions and neither implies the other.
 "title": "Weekly Sync"
 ```
 
-The meeting's name, when one could be found. Two sources, in this order:
-
-1. **The triggering app's window title**, read through `CGWindowListCopyWindowInfo` and
-   stripped of the app's own decoration: `Weekly Sync | Microsoft Teams` becomes
-   `Weekly Sync`, `(3) Design Review - Google Meet - Google Chrome` becomes
-   `Design Review`. Needs Screen Recording; without it, no title is read at all.
-2. **The calendar event running now**, if — and only if — the "read the running
-   calendar event's title" setting is on *and* macOS has granted calendar access. Off by
-   default. It exists because Zoom's window says nothing but `Zoom Meeting` and a Google
-   Meet tab shows the room code.
+The meeting's name, when one could be found. One source: **the triggering app's window
+title**, read through `CGWindowListCopyWindowInfo` and stripped of the app's own
+decoration — `Weekly Sync | Microsoft Teams` becomes `Weekly Sync`, and
+`(3) Design Review - Google Meet - Google Chrome` becomes `Design Review`. Needs Screen
+Recording; without it, no title is read at all. (Until 0.2.0 the running calendar event
+was a second source, behind a setting and a permission. It is gone, along with the rules
+that were the reason for wanting a title early.)
 
 A title that names the app rather than the meeting (`Microsoft Teams`, `Zoom Meeting`,
 `Meet`, a room code like `abc-defg-hij`) is treated as no title at all: the key is then
-absent, the folder is named after the app alone, and rules match on the app.
+absent and the folder is named after the app alone.
 
 The same string, sanitized, becomes the folder's title slug when the "include the title
 in the folder name" setting is on.
+
+**The key can appear after the folder does.** The suggestion popup no longer waits for
+the title — a Teams window is often nameless for the first several seconds of a call —
+so the search runs while the recording is already going. A title that arrives late is
+written into `meta.json` and nowhere else: **the folder is never renamed**, because the
+WAV is open inside it and `screens.jsonl` points into it. So a folder whose name carries
+no title slug may still have a `title`, and that is not an inconsistency.
 
 ### `input`
 
@@ -599,9 +603,20 @@ exactly why its raw segments are in the file.
 
 Each recognized token gets the speaker of the diarization segment covering its
 **midpoint** — not its edges, which is exactly where the recognizer and the diarizer
-disagree most. A token no segment covers becomes `UNKNOWN`. Tokens are then sorted by
-start time and consecutive tokens of the same speaker are bundled into one utterance;
-a **gap of more than 0.8 s** starts a new one.
+disagree most.
+
+A midpoint that **no** segment covers is given the speaker of the **nearest** segment,
+provided the distance from the midpoint to that segment's edge is **0.5 s or less**; a
+tie goes to the earlier segment. Only past 0.5 s does the token become `UNKNOWN`. The
+tolerance exists because the two models disagree at boundaries by tenths of a second:
+pyannote ends a segment on the last voiced frame while the recognizer's token still
+carries the trailing consonant, and a word that lands in that sliver used to become a
+one-word `UNKNOWN` utterance in the middle of somebody's sentence. `UNKNOWN` still
+means what it says — nobody was found speaking anywhere near this word — it is just
+rarer.
+
+Tokens are then sorted by start time and consecutive tokens of the same speaker are
+bundled into one utterance; a **gap of more than 0.8 s** starts a new one.
 
 Diarized speakers are renumbered `S1`, `S2`, … by first appearance, so `S1` is
 whoever spoke first.
@@ -658,12 +673,14 @@ these files should assume them.
 
 - **Long-form seams.** Parakeet decodes in 15 s windows with 2 s overlap; words can be
   dropped or duplicated at the seams even with seam-gap repair on. A word that lands in
-  a seam can also end up alone in a one-word utterance labelled `UNKNOWN`, because its
-  timing drifted out of every diarization segment.
-- **The recognizer is given no language hint.** Parakeet v3 detects the language
-  itself, and on a short utterance after silence it can pick the wrong one — a German
-  sentence transcribed as English is a thing that happens, and it is visible in the
-  text rather than in the confidence.
+  a seam can still end up alone in a one-word utterance labelled `UNKNOWN` when its
+  timing drifted more than 0.5 s out of every diarization segment.
+- **The language hint only chooses a script.** The recognizer *is* told which language
+  to expect (`Einstellungen → Transkription → Sprache`, Deutsch by default), but
+  FluidAudio's hint drives a script filter — Latin, Cyrillic, Greek — and German and
+  English are both Latin. So the hint cannot stop Parakeet v3 drifting into English,
+  and on a stretch of poor audio it does: a German sentence transcribed as English is a
+  thing that happens, and it is visible in the text rather than in the confidence.
 - **Speaker labels are suggestions.** Roughly 18–20 % diarization error rate on room
   audio, and room audio is what `onsite` is.
 - **`ME` exists only in `online` mode.** That is the price of a single microphone

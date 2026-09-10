@@ -52,8 +52,8 @@ final class SettingsWindowController {
 ///
 /// Specification §7 asks for "one window, eleven sliders, nothing more". The eleven
 /// are all here and come first within their tab; the additions the plan accepted —
-/// archive format, rules, calendar titles, title in folder name, notifications,
-/// anchor interval, update checks — follow them.
+/// archive format, title in folder name, notifications, anchor interval, update
+/// checks — follow them.
 struct SettingsView: View {
     let environment: AppEnvironment
 
@@ -71,8 +71,8 @@ struct SettingsView: View {
             TranscriptionSettingsTab(environment: environment)
                 .tabItem { Label(String(localized: "Transkription"), systemImage: "text.bubble") }
 
-            RulesSettingsTab(environment: environment)
-                .tabItem { Label(String(localized: "Regeln"), systemImage: "list.bullet.rectangle") }
+            DetectionSettingsTab(environment: environment)
+                .tabItem { Label(String(localized: "Erkennung"), systemImage: "sensor") }
 
             UpdateSettingsTab(environment: environment)
                 .tabItem { Label(String(localized: "Updates"), systemImage: "arrow.down.circle") }
@@ -525,36 +525,26 @@ private struct TranscriptionSettingsTab: View {
     }
 }
 
-// MARK: - Regeln
+// MARK: - Erkennung
 
-private struct RulesSettingsTab: View {
-    /// Set when the calendar prompt came back with a no.
-    @State private var calendarRefused = false
+/// The watchlist, and nothing else.
+///
+/// It used to be two panes: this one and a table of never/ask/always rules matched
+/// against the meeting's title. The rules are gone — every detected meeting now asks,
+/// once, and the answer is a click. A rule table that can only say what a single click
+/// says is a settings screen to maintain and a behaviour to explain, in exchange for
+/// nothing.
+private struct DetectionSettingsTab: View {
     let environment: AppEnvironment
 
     @State private var newBundleId = ""
     @State private var newName = ""
     @State private var bundleIdError: String?
     @State private var watchlistSelection: Set<String> = []
-    @State private var ruleSelection: Set<UUID> = []
 
     private var settings: SettingsStore { environment.settings }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TabView {
-                watchlistPane
-                    .tabItem { Text(String(localized: "Watchlist")) }
-                rulesPane
-                    .tabItem { Text(String(localized: "Regeln")) }
-            }
-            .padding(12)
-        }
-    }
-
-    // MARK: Watchlist
-
-    private var watchlistPane: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(localized: "Nutzt eine dieser Apps das Mikrofon, schlägt Steno eine Aufnahme vor. Erkannt wird ausschließlich über Core Audio — kein Kalender, keine Fensterinspektion."))
                 .font(.footnote)
@@ -569,7 +559,7 @@ private struct RulesSettingsTab: View {
                     Text(app.bundleId).font(.caption.monospaced())
                 }
             }
-            .frame(minHeight: 180)
+            .frame(minHeight: 220)
 
             HStack(spacing: 6) {
                 TextField(String(localized: "Bundle-ID"), text: $newBundleId)
@@ -592,7 +582,13 @@ private struct RulesSettingsTab: View {
                 settings.settings.watchlist = WatchedApp.defaults
             }
             .controlSize(.small)
+
+            Text(String(localized: "Jedes erkannte Meeting wird einmal vorgeschlagen. Ohne Antwort verschwindet der Vorschlag nach 20 Sekunden und gilt als abgelehnt."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(12)
     }
 
     private func addWatchedApp() {
@@ -613,132 +609,6 @@ private struct RulesSettingsTab: View {
     private func removeWatchedApps() {
         settings.settings.watchlist.removeAll { watchlistSelection.contains($0.bundleId) }
         watchlistSelection.removeAll()
-    }
-
-    // MARK: Rules
-
-    private var rulesPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "Regeln werden geprüft, sobald ein Meeting erkannt wird. Die erste passende gewinnt; passt keine, fragt Steno nach."))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(settings.settings.rules) { rule in
-                        RuleRow(rule: binding(for: rule), watchlist: settings.settings.watchlist) {
-                            settings.settings.rules.removeAll { $0.id == rule.id }
-                        }
-                    }
-                    if settings.settings.rules.isEmpty {
-                        Text(String(localized: "Keine Regeln. Ohne Regel fragt Steno bei jedem erkannten Meeting."))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 12)
-                    }
-                }
-            }
-            .frame(minHeight: 160)
-
-            HStack {
-                Button(String(localized: "Regel hinzufügen")) {
-                    settings.settings.rules.append(RecordingRule(pattern: "", action: .ask))
-                }
-                Spacer()
-            }
-
-            Toggle(
-                String(localized: "Titel des laufenden Kalendertermins lesen"),
-                isOn: Binding(
-                    get: { settings.settings.useCalendarTitles },
-                    set: { isOn in
-                        settings.settings.useCalendarTitles = isOn
-                        // The only place calendar access is ever requested. Reading
-                        // happens later, and only while this stays on and macOS agrees.
-                        guard isOn else { return }
-                        Task {
-                            let granted = await CalendarTitleReader.requestAccess()
-                            if !granted {
-                                settings.settings.useCalendarTitles = false
-                                calendarRefused = true
-                            }
-                        }
-                    }
-                )
-            )
-            if calendarRefused {
-                Text(String(localized: "Ohne Kalenderzugriff bleibt der Termintitel ungenutzt. In den Systemeinstellungen unter „Datenschutz & Sicherheit → Kalender“ wieder erlauben."))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text(String(localized: "Nur der Titel, nur während einer Aufnahme, nur um den Ordner zu benennen und Regeln zu prüfen. Zoom und Google Meet tragen im Fenstertitel keinen Meetingnamen — das ist der einzige Weg dorthin. Standardmäßig aus."))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// A binding into the rule with this identity, so the row edits the stored rule
-    /// rather than a copy. `SettingsStore` is `@Observable` and reached through a
-    /// computed property, so `@Bindable`'s `$` is not available here.
-    private func binding(for rule: RecordingRule) -> Binding<RecordingRule> {
-        Binding(
-            get: { settings.settings.rules.first { $0.id == rule.id } ?? rule },
-            set: { updated in
-                guard let index = settings.settings.rules.firstIndex(where: { $0.id == rule.id })
-                else { return }
-                settings.settings.rules[index] = updated
-            }
-        )
-    }
-}
-
-/// One rule: app, pattern, regex, action, on/off.
-private struct RuleRow: View {
-    @Binding var rule: RecordingRule
-    let watchlist: [WatchedApp]
-    let remove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Toggle("", isOn: $rule.enabled)
-                .labelsHidden()
-                .help(String(localized: "Regel aktiv"))
-
-            Picker("", selection: Binding(
-                get: { rule.appBundleId ?? "" },
-                set: { rule.appBundleId = $0.isEmpty ? nil : $0 }
-            )) {
-                Text(String(localized: "Jede App")).tag("")
-                ForEach(watchlist) { app in
-                    Text(app.name).tag(app.bundleId)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 130)
-
-            TextField(String(localized: "Titel enthält …"), text: $rule.pattern)
-                .frame(minWidth: 130)
-
-            Toggle(String(localized: "Regex"), isOn: $rule.isRegex)
-                .help(String(localized: "Muster als regulären Ausdruck auswerten"))
-
-            Picker("", selection: $rule.action) {
-                Text(String(localized: "nie")).tag(RecordingRuleAction.never)
-                Text(String(localized: "fragen")).tag(RecordingRuleAction.ask)
-                Text(String(localized: "immer")).tag(RecordingRuleAction.always)
-            }
-            .labelsHidden()
-            .frame(width: 92)
-
-            Button(action: remove) {
-                Image(systemName: "minus.circle")
-            }
-            .buttonStyle(.borderless)
-            .help(String(localized: "Regel entfernen"))
-        }
     }
 }
 

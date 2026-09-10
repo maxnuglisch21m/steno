@@ -18,7 +18,7 @@ enum Log {
     static let app = Logger(subsystem: subsystem, category: "app")
     /// Process taps, aggregate devices, the microphone, WAV writing.
     static let audio = Logger(subsystem: subsystem, category: "audio")
-    /// Meeting detection, window and calendar titles, rules.
+    /// Meeting detection, window titles, the suggestion.
     static let detection = Logger(subsystem: subsystem, category: "detection")
     /// ScreenCaptureKit streams and the screenshot gate.
     static let screens = Logger(subsystem: subsystem, category: "screens")

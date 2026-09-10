@@ -36,7 +36,7 @@ enum Permission: String, Sendable, Hashable, CaseIterable, Identifiable {
         case .systemAudio:
             return String(localized: "Nimmt den Ton der Meeting-App auf, damit die anderen Teilnehmer im Transkript stehen. Nur für Online-Meetings.")
         case .screenRecording:
-            return String(localized: "Speichert Screenshots der Bildschirme und liest Fenstertitel für Regeln.")
+            return String(localized: "Speichert Screenshots der Bildschirme und liest den Fenstertitel, um das Meeting zu benennen.")
         case .models:
             return String(localized: "Spracherkennung und Sprechertrennung laufen offline auf diesem Mac. Die Modelle werden einmal geladen.")
         }

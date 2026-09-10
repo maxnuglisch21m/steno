@@ -25,7 +25,8 @@ struct TranscriptMergerTests {
         room: [ASRToken],
         mic: [ASRToken]? = nil,
         diarization: [DiarSegment] = [],
-        gapThreshold: TimeInterval = TranscriptMerger.defaultGapThreshold
+        gapThreshold: TimeInterval = TranscriptMerger.defaultGapThreshold,
+        snapTolerance: TimeInterval = TranscriptMerger.defaultUnknownSnapTolerance
     ) -> Transcript {
         TranscriptMerger.merge(
             mode: mode,
@@ -33,7 +34,8 @@ struct TranscriptMergerTests {
             micTokens: mic,
             diarization: diarization,
             models: models,
-            gapThreshold: gapThreshold
+            gapThreshold: gapThreshold,
+            unknownSnapTolerance: snapTolerance
         )
     }
 
@@ -96,6 +98,121 @@ struct TranscriptMergerTests {
         #expect(transcript.utterances.count == 1)
         #expect(transcript.utterances[0].speaker == SpeakerLabel.unknown)
         #expect(transcript.utterances[0].speaker == "UNKNOWN")
+    }
+
+    // MARK: - Snapping an orphan token to the nearest segment
+
+    @Test("a token just past a segment's end takes that segment's speaker")
+    func snapsBackwards() {
+        // Midpoint 10.2, i.e. 0.2 s past the end of the only segment. The first real
+        // recording was full of these: pyannote ends on the last voiced frame while
+        // the recognizer's token still carries the trailing consonant.
+        let transcript = Self.merge(
+            mode: .onsite,
+            room: [Self.token("Probezeit.", 10.0)],
+            diarization: [DiarSegment(speaker: "A", start: 0, end: 10)]
+        )
+        #expect(transcript.utterances.map(\.speaker) == ["S1"])
+    }
+
+    @Test("a token just before a segment's start takes that segment's speaker")
+    func snapsForwards() {
+        // Midpoint 9.7, 0.3 s before the segment begins.
+        let transcript = Self.merge(
+            mode: .onsite,
+            room: [Self.token("Also", 9.5)],
+            diarization: [DiarSegment(speaker: "A", start: 10, end: 20)]
+        )
+        #expect(transcript.utterances.map(\.speaker) == ["S1"])
+    }
+
+    @Test("the nearer segment wins, and a tie goes to the earlier one")
+    func snapsToTheNearest() {
+        let neighbours = [
+            DiarSegment(speaker: "early", start: 0, end: 10),
+            DiarSegment(speaker: "late", start: 11, end: 20)
+        ]
+        // Midpoint 10.3: 0.3 s past `early`, 0.7 s before `late`.
+        let nearer = Self.merge(
+            mode: .onsite,
+            room: [Self.token("näher", 10.1)],
+            diarization: neighbours
+        )
+        #expect(nearer.utterances.map(\.speaker) == ["S1"])
+        #expect(nearer.diarization.map(\.speaker) == ["S1", "S2"])
+
+        // Midpoint 10.5, exactly between the two. The earlier segment takes it, so
+        // the same input always produces the same transcript.
+        let tie = Self.merge(
+            mode: .onsite,
+            room: [Self.token("mittig", 10.3)],
+            diarization: neighbours
+        )
+        #expect(tie.utterances.map(\.speaker) == ["S1"])
+    }
+
+    @Test("a token further away than the tolerance stays UNKNOWN")
+    func beyondToleranceStaysUnknown() {
+        // Midpoint 10.7, 0.7 s past the segment: a real hole in the diarization, not a
+        // boundary disagreement.
+        let transcript = Self.merge(
+            mode: .onsite,
+            room: [Self.token("weit", 10.5)],
+            diarization: [DiarSegment(speaker: "A", start: 0, end: 10)]
+        )
+        #expect(transcript.utterances.map(\.speaker) == ["UNKNOWN"])
+    }
+
+    @Test("the tolerance is a parameter, and zero snaps only what touches an edge")
+    func toleranceIsConfigurable() {
+        let diarization = [DiarSegment(speaker: "A", start: 0, end: 10)]
+        // Midpoint exactly 10.0. `covers` is half-open, so nothing covers it, but it
+        // touches the edge and snapping costs nothing.
+        #expect(
+            TranscriptMerger.speaker(at: 10.0, in: diarization, snapTolerance: 0) == "A"
+        )
+        #expect(
+            TranscriptMerger.speaker(at: 10.1, in: diarization, snapTolerance: 0) == "UNKNOWN"
+        )
+        // A wider tolerance reaches further; a negative one turns snapping off.
+        #expect(
+            TranscriptMerger.speaker(at: 11.5, in: diarization, snapTolerance: 2) == "A"
+        )
+        #expect(
+            TranscriptMerger.speaker(at: 10.0, in: diarization, snapTolerance: -1) == "UNKNOWN"
+        )
+        let strict = Self.merge(
+            mode: .onsite,
+            room: [Self.token("Probezeit.", 10.0)],
+            diarization: diarization,
+            snapTolerance: -1
+        )
+        #expect(strict.utterances.map(\.speaker) == ["UNKNOWN"])
+    }
+
+    @Test("microphone tokens are ME whatever the diarization says, snapping included")
+    func snappingLeavesMeAlone() {
+        // The microphone token sits 0.2 s past the segment, which for a room token
+        // would snap. `ME` is physics and is not up for discussion.
+        let transcript = Self.merge(
+            mode: .online,
+            room: [],
+            mic: [Self.token("ich", 10.0)],
+            diarization: [DiarSegment(speaker: "A", start: 0, end: 10)]
+        )
+        #expect(transcript.utterances.map(\.speaker) == ["ME"])
+    }
+
+    @Test("a room token the microphone already covers is still dropped")
+    func snappingDoesNotResurrectCoveredTokens() {
+        let transcript = Self.merge(
+            mode: .online,
+            room: [Self.token("ich", 10.0)],
+            mic: [Self.token("ich", 10.0)],
+            diarization: [DiarSegment(speaker: "A", start: 0, end: 10)]
+        )
+        #expect(transcript.utterances.map(\.speaker) == ["ME"])
+        #expect(transcript.utterances[0].tokens.count == 1)
     }
 
     @Test("with no diarization at all every token is UNKNOWN")
