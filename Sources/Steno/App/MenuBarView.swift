@@ -82,13 +82,18 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Sparkle is wired up in M7. The item is present so the menu is the one the
-        // plan describes, and disabled because the public key in Info.plist is still a
-        // placeholder — instantiating the updater now would put an error dialog in
-        // front of the user on the first check.
-        Button(String(localized: "Nach Updates suchen …")) {}
-            .disabled(true)
-            .help(String(localized: "verfügbar ab der ersten Veröffentlichung"))
+        // Sparkle. Disabled while a check is already running — `canCheckForUpdates` is
+        // what Sparkle itself recommends for menu-item validation — and disabled for
+        // good in a build whose `SUPublicEDKey` is still the placeholder, which is what
+        // `unavailableReason` says.
+        Button(String(localized: "Nach Updates suchen …")) {
+            environment.updater.checkForUpdates()
+        }
+        .disabled(!environment.updater.canCheckForUpdates)
+        .help(
+            environment.updater.unavailableReason
+                ?? String(localized: "Fragt die GitHub-Releases nach einer neueren Version.")
+        )
 
         Button(String(localized: "Einstellungen …")) {
             SettingsWindowController.shared.show(environment: environment)

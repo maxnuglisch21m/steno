@@ -42,10 +42,13 @@
 	     `releases/latest/download` is followed. -->
 	<key>SUFeedURL</key>
 	<string>https://github.com/maxnuglisch21m/steno/releases/latest/download/appcast.xml</string>
-	<!-- Replaced with the real EdDSA public key by the first release (M7). The private
-	     half never enters this repository. -->
+	<!-- The EdDSA public key every update is verified against. Its private half lives
+	     in the login keychain of whoever generated it and in the repository secret
+	     SPARKLE_PRIVATE_KEY, and never enters this repository. Once a release has
+	     shipped this key cannot be rotated without breaking updates for everyone
+	     still on an older build — treat it as permanent. -->
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
+	<string>mH/M/f+ugRwVaPiQ5dL4Bn1QwsjWuoOynPF6UFwCHps=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>

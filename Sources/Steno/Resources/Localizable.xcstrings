@@ -889,6 +889,18 @@
         }
       }
     },
+    "Dieser Build hat noch keinen Update-Schlüssel. Updates sind deshalb abgeschaltet; eine neuere Version muss von Hand installiert werden.": {
+      "comment": "Explanation under the update settings when the bundle has no public key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build has no update key yet, so updates are switched off; a newer version has to be installed by hand."
+          }
+        }
+      }
+    },
     "Dieses Meeting ist nicht zur Verarbeitung vorgemerkt.": {
       "comment": "Refusal when a finished or still-recording meeting is handed to the transcription queue.",
       "extractionState": "manual",
@@ -1009,6 +1021,18 @@
         }
       }
     },
+    "Fragt die GitHub-Releases nach einer neueren Version.": {
+      "comment": "Help text on the manual update check, in the menu and in the settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Asks the GitHub releases for a newer version."
+          }
+        }
+      }
+    },
     "Geräte neu einlesen": {
       "comment": "Button that re-reads the audio inputs.",
       "extractionState": "manual",
@@ -1077,6 +1101,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Denied in System Settings. Allow it again there."
+          }
+        }
+      }
+    },
+    "Installierte Version": {
+      "comment": "Label for the running app's version and build number.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed version"
           }
         }
       }
@@ -2125,6 +2161,30 @@
         }
       }
     },
+    "Update-Feed noch nicht konfiguriert": {
+      "comment": "Why the update actions are disabled: the bundle carries no EdDSA public key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update feed not configured yet"
+          }
+        }
+      }
+    },
+    "Update-Quelle": {
+      "comment": "Label for the appcast URL updates are read from.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update source"
+          }
+        }
+      }
+    },
     "Updates": {
       "comment": "Settings tab.",
       "extractionState": "manual",
@@ -2137,14 +2197,14 @@
         }
       }
     },
-    "Updates kommen über GitHub-Releases und sind mit einem eigenen Schlüssel signiert. Die Einstellung wird gespeichert; verdrahtet wird sie mit der ersten Veröffentlichung.": {
-      "comment": "Explains the update settings.",
+    "Updates kommen über GitHub-Releases, werden mit einem eigenen Schlüssel signiert und einmal täglich gesucht. Heruntergeladen und installiert wird nur, was du bestätigst.": {
+      "comment": "Explanation under the update settings when updates are configured.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Updates come from GitHub releases and are signed with their own key. The setting is stored; it is wired up with the first release."
+            "value": "Updates come from GitHub releases, are signed with a key of their own, and are looked for once a day. Nothing is downloaded or installed without your confirmation."
           }
         }
       }
@@ -2305,6 +2365,18 @@
         }
       }
     },
+    "Zuletzt gesucht": {
+      "comment": "Label for the date of the last update check.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last checked"
+          }
+        }
+      }
+    },
     "erteilt": {
       "comment": "Accessibility label of the green check mark in the onboarding.",
       "extractionState": "manual",
@@ -2377,6 +2449,18 @@
         }
       }
     },
+    "noch nie": {
+      "comment": "Shown instead of a date when no update check has run yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "never"
+          }
+        }
+      }
+    },
     "v3 ist mehrsprachig, Deutsch inbegriffen. v2 ist älter und schneller.": {
       "comment": "Explains the ASR version picker.",
       "extractionState": "manual",
@@ -2385,18 +2469,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "v3 is multilingual, German included. v2 is older and faster."
-          }
-        }
-      }
-    },
-    "verfügbar ab der ersten Veröffentlichung": {
-      "comment": "Help text of a button that is disabled until the first release.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "available from the first release onwards"
           }
         }
       }

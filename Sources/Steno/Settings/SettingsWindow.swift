@@ -747,6 +747,13 @@ private struct RuleRow: View {
 private struct UpdateSettingsTab: View {
     let environment: AppEnvironment
 
+    /// Read when the tab appears and after a check, rather than observed: Sparkle
+    /// publishes the date through KVO, and one `onAppear` is a great deal less
+    /// machinery than a KVO bridge for a line of text nobody watches change.
+    @State private var lastCheck: Date?
+
+    private var updater: UpdaterController { environment.updater }
+
     var body: some View {
         Form {
             Section {
@@ -757,15 +764,58 @@ private struct UpdateSettingsTab: View {
                         set: { environment.settings.settings.checkForUpdatesAutomatically = $0 }
                     )
                 )
-                Button(String(localized: "Jetzt suchen")) {}
-                    .disabled(true)
-                    .help(String(localized: "verfügbar ab der ersten Veröffentlichung"))
-                Text(String(localized: "Updates kommen über GitHub-Releases und sind mit einem eigenen Schlüssel signiert. Die Einstellung wird gespeichert; verdrahtet wird sie mit der ersten Veröffentlichung."))
+                .disabled(!updater.isConfigured)
+
+                Button(String(localized: "Jetzt suchen")) {
+                    updater.checkForUpdates()
+                    // Sparkle sets the date when the request goes out, so reading it
+                    // back on the next run loop turn is enough to show it.
+                    Task { @MainActor in lastCheck = updater.lastUpdateCheckDate }
+                }
+                .disabled(!updater.canCheckForUpdates)
+                .help(
+                    updater.unavailableReason
+                        ?? String(localized: "Fragt die GitHub-Releases nach einer neueren Version.")
+                )
+
+                LabeledContent(String(localized: "Zuletzt gesucht")) {
+                    Text(lastCheckDescription)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                LabeledContent(String(localized: "Installierte Version")) {
+                    Text(verbatim: "\(AppVersion.marketing) (\(AppVersion.build))")
+                        .textSelection(.enabled)
+                }
+                if let feed = updater.feedURLString {
+                    LabeledContent(String(localized: "Update-Quelle")) {
+                        Text(verbatim: feed)
+                            .font(.footnote)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                }
+                Text(footnote)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
+        .onAppear { lastCheck = updater.lastUpdateCheckDate }
+    }
+
+    private var lastCheckDescription: String {
+        guard let lastCheck else { return String(localized: "noch nie") }
+        return lastCheck.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var footnote: String {
+        updater.isConfigured
+            ? String(localized: "Updates kommen über GitHub-Releases, werden mit einem eigenen Schlüssel signiert und einmal täglich gesucht. Heruntergeladen und installiert wird nur, was du bestätigst.")
+            : String(localized: "Dieser Build hat noch keinen Update-Schlüssel. Updates sind deshalb abgeschaltet; eine neuere Version muss von Hand installiert werden.")
     }
 }

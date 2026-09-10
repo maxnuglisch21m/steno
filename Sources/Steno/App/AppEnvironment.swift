@@ -31,6 +31,9 @@ final class AppEnvironment {
     let detectionController: MeetingDetectionController
     /// never / ask / always, from the rules and the meeting's title.
     let ruleEngine: RuleEngine
+    /// Sparkle, or a stand-in that reports itself unconfigured when the bundle has no
+    /// usable public key.
+    let updater: UpdaterController
     /// Sleep and the lock screen.
     private(set) var sleepLock: SleepLockObserver?
 
@@ -76,6 +79,7 @@ final class AppEnvironment {
         // what writes the transcript and moves `meta.json` to `done`.
         coordinator.transcription = transcription
         self.hotKeys = HotKeys()
+        self.updater = UpdaterController(settings: settings)
 
         let detector = MeetingDetector(settings: settings)
         self.detector = detector
@@ -148,6 +152,10 @@ final class AppEnvironment {
         )
         sleepLock.start()
         self.sleepLock = sleepLock
+
+        // After the recovery scan and the queue, and deliberately last of the
+        // background jobs: an update check must never be what a launch waits on.
+        updater.start()
 
         if detection { detectionController.start() }
 
